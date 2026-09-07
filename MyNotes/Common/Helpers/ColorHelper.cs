@@ -1,6 +1,6 @@
 ﻿namespace MyNotes.Common.Helpers;
 
-public static class ColorHelper
+internal static class ColorHelper
 {
   public static SolidColorBrush ToBrush(Color? c) => new(c ?? Colors.Transparent);
   public static AcrylicBrush ToAcrylicBrush(Color c, double tintOpacity = 1.0, double tintLuminosityOpacity = 1.0) => new() { FallbackColor = c, TintColor = c, TintOpacity = tintOpacity, TintLuminosityOpacity = tintLuminosityOpacity };

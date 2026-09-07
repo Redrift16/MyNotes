@@ -1,6 +1,6 @@
 ﻿namespace MyNotes.Common.Helpers;
 
-public static partial class CollectionHelper
+internal static class CollectionHelper
 {
   /// <summary>
   /// 지정한 정수 시퀀스에서 최장 증가 부분 수열(LIS)에 포함되는 인덱스를 표시합니다.
@@ -136,10 +136,7 @@ public static partial class CollectionHelper
 
     return result;
   }
-}
 
-public static partial class CollectionHelper
-{
   /// <summary>
   /// 정렬된 컬렉션에서 지정한 항목의 정수 Position 값을 재배치합니다.
   /// Position 간격이 충분하면 대상 항목만 수정하고,

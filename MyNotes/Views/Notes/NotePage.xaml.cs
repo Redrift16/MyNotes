@@ -19,6 +19,7 @@ using MyNotes.Models.Media;
 using MyNotes.Models.Notes;
 using MyNotes.Models.UI;
 using MyNotes.Services.Dialogs;
+using MyNotes.Strings;
 using MyNotes.ViewModels;
 using MyNotes.ViewModels.Media;
 using MyNotes.ViewModels.Media.Providers;
@@ -166,7 +167,7 @@ internal sealed partial class NotePage : Page, ITitleBarProvider, IAsyncDisposab
       }
     }
 
-    await EditorViewModel.LoadAsync();
+    await EditorViewModel.LoadBodyAsync();
   }
 
   private void NotePage_Unloaded(object sender, RoutedEventArgs e)
@@ -359,11 +360,12 @@ partial class NotePage
           switch (fileType.Value.Extension)
           {
             case string ex when ex is ".txt":
-              NotePage_TextEditorRichEditBox.Document.GetText(TextGetOptions.None, out var plainText);
+              NotePage_TextEditorRichEditBox.Document.GetText(TextGetOptions.None | TextGetOptions.IncludeNumbering, out var plainText);
               await File.WriteAllTextAsync(savePath, plainText);
               break;
             case string ex when ex is ".rtf":
-              var rtfFile = await StorageFile.GetFileFromPathAsync(savePath);
+              StorageFolder folder = await StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(result.Path));
+              var rtfFile = await folder.CreateFileAsync(Path.GetFileName(savePath), CreationCollisionOption.ReplaceExisting);
               using (IRandomAccessStream randAccStream = await rtfFile.OpenAsync(FileAccessMode.ReadWrite))
               {
                 NotePage_TextEditorRichEditBox.Document.SaveToStream(TextGetOptions.FormatRtf, randAccStream);
@@ -514,10 +516,10 @@ partial class NotePage
     args.Handled = true;
     if (EditorViewModel is not null)
     {
-      await EditorViewModel.UpdateNoteBodyAsync();
-      NotePage_InfoBar.Title = "Saved";
+      bool success = await EditorViewModel.UpdateNoteBodyAsync();
+      NotePage_InfoBar.Title = success ? LocalizedStrings.SavedMessage : LocalizedStrings.FailedMessage;
       NotePage_InfoBar.ActionButton = null;
-      NotePage_InfoBar.Severity = InfoBarSeverity.Success;
+      NotePage_InfoBar.Severity = success ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
       OpenInfoBar(TimeSpan.FromSeconds(2));
     }
   }

@@ -4,7 +4,7 @@ using Windows.Globalization;
 
 namespace MyNotes.Common.Helpers;
 
-public static class StringHelper
+internal static class StringHelper
 {
   public static string? NullIfWhiteSpace(string? str) => string.IsNullOrWhiteSpace(str) ? null : str;
 

@@ -1,6 +1,6 @@
 ﻿namespace MyNotes.Common.Helpers;
 
-public static class BooleanHelper
+internal static class BooleanHelper
 {
   public static bool Negate(bool value) => !value;
 

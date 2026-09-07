@@ -2,13 +2,9 @@
 
 namespace MyNotes.Strings;
 
-internal class LocalizedStrings
+internal static partial class LocalizedStrings
 {
   public static ResourceLoader DefaultResourceLoader { get; } = ResourceLoader.GetForViewIndependentUse();
-  public static ResourceLoader SettingsPageResourceLoader { get; } = ResourceLoader.GetForViewIndependentUse("SettingsPage");
-  public static ResourceLoader CreateUserNavigationDialogResourceLoader { get; } = ResourceLoader.GetForViewIndependentUse("CreateUserNavigationDialog");
-  public static ResourceLoader UpdateUserNavigationDialogResourceLoader { get; } = ResourceLoader.GetForViewIndependentUse("UpdateUserNavigationDialog");
-  public static ResourceLoader ConfirmDeleteDialogResourceLoader { get; } = ResourceLoader.GetForViewIndependentUse("ConfirmDeleteDialog");
 
   public static string MainWindowTitle => DefaultResourceLoader.GetString("MainWindowTitle");
 
@@ -53,11 +49,25 @@ internal class LocalizedStrings
   public static string JumpListNewNote => DefaultResourceLoader.GetString("JumpList_NewNote");
   public static string JumpListMainWindow => DefaultResourceLoader.GetString("JumpList_MainWindow");
   public static string JumpListSettings => DefaultResourceLoader.GetString("JumpList_Settings");
+  public static string SavedMessage => DefaultResourceLoader.GetString("Message_Saved");
+  public static string FailedMessage => DefaultResourceLoader.GetString("Message_Failed");
+}
+
+partial class LocalizedStrings
+{
+  public static ResourceLoader CreateUserNavigationDialogResourceLoader { get; } = ResourceLoader.GetForViewIndependentUse("CreateUserNavigationDialog");
 
   public static string CreateUserNavigationDialogTitleText => CreateUserNavigationDialogResourceLoader.GetString("ContentDialog_TitleText");
   public static string CreateUserNavigationDialogSubTitleTextBlockText => CreateUserNavigationDialogResourceLoader.GetString("SubTitleTextBlock_Text");
-
-  public static string ConfirmDeleteDialogAffixTitleTextBlockText => ConfirmDeleteDialogResourceLoader.GetString("ContentDialog_TitleAffixText");
+}
+partial class LocalizedStrings
+{
+  public static ResourceLoader ConfirmDeleteDialogResourceLoader { get; } = ResourceLoader.GetForViewIndependentUse("ConfirmDeleteDialog"); 
+  
+  public static string ConfirmDeleteDialogAffixTitleTextBlockText => ConfirmDeleteDialogResourceLoader.GetString("ContentDialog_TitleAffixText"); }
+partial class LocalizedStrings
+{
+  public static ResourceLoader UpdateUserNavigationDialogResourceLoader { get; } = ResourceLoader.GetForViewIndependentUse("UpdateUserNavigationDialog");
 
   public static string UpdateUserNavigationDialogTitleText => UpdateUserNavigationDialogResourceLoader.GetString("ContentDialog_TitleText");
   public static string UpdateUserNavigationDialogSubTitleTextBlockText => UpdateUserNavigationDialogResourceLoader.GetString("SubTitleTextBlock_Text");

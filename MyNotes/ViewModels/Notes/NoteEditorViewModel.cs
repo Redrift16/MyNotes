@@ -7,7 +7,6 @@ using CommunityToolkit.WinUI.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Windows.Storage.Pickers;
 
-using MyNotes.Application.Contracts.Media.Models;
 using MyNotes.Application.Contracts.Notes.Models;
 using MyNotes.Application.Notes;
 using MyNotes.Application.Notes.Results;
@@ -19,7 +18,6 @@ using MyNotes.Common.Commands;
 using MyNotes.Common.Enums.Modes;
 using MyNotes.Common.Helpers;
 using MyNotes.Constants;
-using MyNotes.Debugging;
 using MyNotes.Domain.Notes;
 using MyNotes.Messaging;
 using MyNotes.Messaging.Messages;
@@ -35,6 +33,8 @@ namespace MyNotes.ViewModels.Notes;
 
 internal sealed partial class NoteEditorViewModel : AsyncViewModelBase
 {
+  public NoteEditorViewModelState State { get; private set; } = NoteEditorViewModelState.Initializing;
+
   private readonly IUpdateCoordinator<string, NotePatchDto, UpdateNoteResult> NoteUpdateCoordinator;
   private readonly IUpdateCoordinator<string, NoteViewStatePatchDto> ViewStateUpdateCoordinator;
   private readonly NoteService NoteService;
@@ -71,40 +71,33 @@ internal sealed partial class NoteEditorViewModel : AsyncViewModelBase
     SetCommands();
   }
 
-  public void AttachDocument(RichEditTextDocument document) => Document = document;
-
   private void InitializeMembers()
   {
     _selectedPaletteBackgroundColor = PaletteBackgroundColors.FirstOrDefault(b => b.Color == Note.BackgroundColor);
-    _backgroundImageAlignmentX = Note.BackgroundImageAlignment switch
-    {
-      AlignmentPosition.TopLeft or AlignmentPosition.CenterLeft or AlignmentPosition.BottomLeft => AlignmentX.Left,
-      AlignmentPosition.TopCenter or AlignmentPosition.Center or AlignmentPosition.BottomCenter => AlignmentX.Center,
-      AlignmentPosition.TopRight or AlignmentPosition.CenterRight or AlignmentPosition.BottomRight => AlignmentX.Right,
-      _ => throw new InvalidOperationException()
-    };
-    _backgroundImageAlignmentY = Note.BackgroundImageAlignment switch
-    {
-      AlignmentPosition.TopLeft or AlignmentPosition.TopCenter or AlignmentPosition.TopRight => AlignmentY.Top,
-      AlignmentPosition.CenterLeft or AlignmentPosition.Center or AlignmentPosition.CenterRight => AlignmentY.Center,
-      AlignmentPosition.BottomLeft or AlignmentPosition.BottomCenter or AlignmentPosition.BottomRight => AlignmentY.Bottom,
-      _ => throw new InvalidOperationException()
-    };
+    _backgroundImageAlignmentX = GeometryHelper.GetAlignmentX(Note.BackgroundImageAlignment);
+    _backgroundImageAlignmentY = GeometryHelper.GetAlignmentY(Note.BackgroundImageAlignment);
   }
 
-  public async Task LoadAsync()
+  public void AttachDocument(RichEditTextDocument document)
+  {
+    Document = document;
+    State = NoteEditorViewModelState.DocumentReady;
+  }
+
+  public async Task LoadBodyAsync()
   {
     // Editor BodyText
     try
     {
       Document.LoadFromStream(TextSetOptions.FormatRtf, await StreamHelper.ToRandomAccessStreamAsync(Note.Body));
+      State = NoteEditorViewModelState.Loaded;
+      _bodyEditorBatchTimer.Tick += BodyEditorBatchTimer_Tick;
     }
     catch
     {
+      State = NoteEditorViewModelState.Failed;
     }
-
     Note.PropertyChanged += Note_PropertyChanged;
-    _bodyEditorBatchTimer.Tick += BodyEditorBatchTimer_Tick;
   }
 
   protected override async ValueTask DisposeAsyncCore()
@@ -114,10 +107,13 @@ internal sealed partial class NoteEditorViewModel : AsyncViewModelBase
       return;
     }
 
-    Note.PropertyChanged -= Note_PropertyChanged;
+    var previousState = State;
+    State = NoteEditorViewModelState.Disposing;
 
+    Note.PropertyChanged -= Note_PropertyChanged;
     _bodyEditorBatchTimer.Tick -= BodyEditorBatchTimer_Tick;
-    if (!await DeleteNotePermanentlyWhenEmpty())
+
+    if (previousState is NoteEditorViewModelState.Loaded && !await DeleteNotePermanentlyWhenEmpty())
     {
       await UpdateNoteBodyAsync();
       await NoteService.Modification.CommitSearchIndexAsync();
@@ -125,47 +121,6 @@ internal sealed partial class NoteEditorViewModel : AsyncViewModelBase
     await NoteViewModelLease.DisposeAsync();
   }
   #endregion
-
-  private async void Note_PropertyChanged(object? sender, PropertyChangedEventArgs e)
-  {
-    if (e.PropertyName is null)
-    {
-      return;
-    }
-
-    if (ViewStatePatchDescriptors.TryGetValue(e.PropertyName, out var viewStatePatchDescriptor))
-    {
-      ViewStateUpdateCoordinator.Submit(viewStatePatchDescriptor.Key, viewStatePatchDescriptor.CreatePatch(Note), viewStatePatchDescriptor.BatchMode);
-    }
-
-    // 뷰에 반영(TwoWay 바인딩 시) 
-    switch (e.PropertyName)
-    {
-      case nameof(Note.BackgroundColor):
-        SelectedPaletteBackgroundColor = PaletteBackgroundColors.FirstOrDefault(b => b.Color == Note.BackgroundColor);
-        ChangeSystemBackdropExtended();
-        var updateResult = await UpdateAsync(nameof(NoteModel.BackgroundColor));
-        break;
-      case nameof(Note.BackdropKind):
-        ChangeSystemBackdrop();
-        ChangeSystemBackdropExtended();
-        if (Note.BackdropKind is not BackdropKind.None)
-        {
-          Note.ShowBackgroundImage = false;
-        }
-        break;
-      case nameof(Note.BackdropTintOpacity):
-        ChangeSystemBackdropExtended();
-        break;
-      case nameof(Note.BackdropLuminosityOpacity):
-        ChangeSystemBackdropExtended();
-        break;
-    }
-  }
-
-  private async Task<UpdateNoteResult> UpdateAsync(string propertyName) => NotePatchDescriptors.TryGetValue(propertyName, out var notePatchDescriptor)
-    ? await NoteUpdateCoordinator.Submit(notePatchDescriptor.Key, notePatchDescriptor.CreatePatch(Note), notePatchDescriptor.BatchMode)
-    : new UpdateNoteResult() { Status = AppUpdateStatus.Failed };
 
   private async Task<bool> DeleteNotePermanentlyWhenEmpty()
   {
@@ -181,419 +136,9 @@ internal sealed partial class NoteEditorViewModel : AsyncViewModelBase
 
     return false;
   }
-
-  #region Background
-  public IReadOnlyList<SolidColorBrush> PaletteBackgroundColors { get; } = [.. AppColors.DefaultPaletteColors.Select(c => new SolidColorBrush(c.ToColor()))];
-
-  private SolidColorBrush? _selectedPaletteBackgroundColor;
-  public SolidColorBrush? SelectedPaletteBackgroundColor
-  {
-    get => _selectedPaletteBackgroundColor;
-    set
-    {
-      if (SetProperty(ref _selectedPaletteBackgroundColor, value) && value is not null)
-      {
-        Note.BackgroundColor = value.Color;
-      }
-    }
-  }
-
-  private AlignmentX _backgroundImageAlignmentX;
-  public AlignmentX BackgroundImageAlignmentX
-  {
-    get => _backgroundImageAlignmentX;
-    set
-    {
-      if (Enum.IsDefined(value))
-      {
-        SetProperty(ref _backgroundImageAlignmentX, value);
-        SetBackgroundImageAlignment(value, BackgroundImageAlignmentY);
-      }
-    }
-  }
-
-  private AlignmentY _backgroundImageAlignmentY;
-  public AlignmentY BackgroundImageAlignmentY
-  {
-    get => _backgroundImageAlignmentY;
-    set
-    {
-      if (Enum.IsDefined(value))
-      {
-        SetProperty(ref _backgroundImageAlignmentY, value);
-        SetBackgroundImageAlignment(BackgroundImageAlignmentX, value);
-      }
-    }
-  }
-
-  private void SetBackgroundImageAlignment(AlignmentX x, AlignmentY y)
-  {
-    Note.BackgroundImageAlignment = (x, y) switch
-    {
-      (AlignmentX.Left, AlignmentY.Top) => AlignmentPosition.TopLeft,
-      (AlignmentX.Left, AlignmentY.Center) => AlignmentPosition.CenterLeft,
-      (AlignmentX.Left, AlignmentY.Bottom) => AlignmentPosition.BottomLeft,
-      (AlignmentX.Center, AlignmentY.Top) => AlignmentPosition.TopCenter,
-      (AlignmentX.Center, AlignmentY.Center) => AlignmentPosition.Center,
-      (AlignmentX.Center, AlignmentY.Bottom) => AlignmentPosition.BottomCenter,
-      (AlignmentX.Right, AlignmentY.Top) => AlignmentPosition.TopRight,
-      (AlignmentX.Right, AlignmentY.Center) => AlignmentPosition.CenterRight,
-      (AlignmentX.Right, AlignmentY.Bottom) => AlignmentPosition.BottomRight,
-      _ => throw new InvalidOperationException()
-    };
-  }
-  #endregion
-
-  #region Backdrop
-
-  public void ChangeSystemBackdrop()
-  {
-    NoteWindowService.TryExecuteOnWindow(Note.Id, (noteWindow) =>
-    {
-      noteWindow.SystemBackdrop = Note.BackdropKind switch
-      {
-        BackdropKind.None => null,
-        BackdropKind.Acrylic => new ExtendedAcrylicBackdrop(),
-        BackdropKind.Mica => new ExtendedMicaBackdrop(),
-        _ => throw new InvalidOperationException()
-      };
-    });
-  }
-
-  public void ChangeSystemBackdropExtended()
-  {
-    NoteWindowService.TryExecuteOnWindow(Note.Id, (noteWindow) =>
-    {
-      if (noteWindow.SystemBackdrop is ExtendedSystemBackdrop backdrop)
-      {
-        backdrop.TintColor = Note.BackgroundColor;
-        backdrop.TintOpacity = Note.BackdropTintOpacity;
-        backdrop.LuminosityOpacity = Note.BackdropLuminosityOpacity;
-        backdrop.FallbackColor = Common.Helpers.ColorHelper.GetFallbackColor(Note.BackgroundColor, Note.BackdropTintOpacity);
-      }
-    });
-  }
-  #endregion
-
-  private bool _isUpdatingSelectionFormatStates = false;
-  public void UpdateSelectionFormatStates()
-  {
-    ConsoleHelper.WriteLine(true, "{0}: {1}", "UpdateSelectionFormatStates", true);
-    _isUpdatingSelectionFormatStates = true;
-    var characterFormat = Document.Selection.CharacterFormat;
-    var paragraphFormat = Document.Selection.ParagraphFormat;
-
-    IsSelectionBold = characterFormat.Bold is FormatEffect.On;
-    IsSelectionItalic = characterFormat.Italic is FormatEffect.On;
-    IsSelectionUnderlined = characterFormat.Underline is UnderlineType.Single;
-    IsSelectionStrikethrough = characterFormat.Strikethrough is FormatEffect.On;
-    SelectionFontSizeText = characterFormat.Size > 0 ? characterFormat.Size.ToString() : string.Empty;
-    SelectionFontColor = characterFormat.ForegroundColor;
-    SelectionHighlightColor = characterFormat.BackgroundColor;
-    IsSelectionParagraphList = paragraphFormat.ListType is not (MarkerType.Undefined or MarkerType.None);
-    SelectionMarkerType = paragraphFormat.ListType;
-    SelectionMarkerStyle = paragraphFormat.ListStyle;
-    IsSelectionMarkerStyleEnabled = SelectionMarkerType is not (MarkerType.None or MarkerType.Undefined or MarkerType.Bullet);
-    _isUpdatingSelectionFormatStates = false;
-  }
-
-  #region Bold, Italic, Underline, Strikethrough
-  public bool IsSelectionBold
-  {
-    get;
-    set
-    {
-      SetProperty(ref field, value);
-      if (!_isUpdatingSelectionFormatStates)
-      {
-        Document.Selection.CharacterFormat.Bold = FormatEffect.Toggle;
-      }
-    }
-  }
-
-  public bool IsSelectionItalic
-  {
-    get;
-    set
-    {
-      SetProperty(ref field, value);
-      if (!_isUpdatingSelectionFormatStates)
-      {
-        Document.Selection.CharacterFormat.Italic = FormatEffect.Toggle;
-      }
-    }
-  }
-
-  public bool IsSelectionUnderlined
-  {
-    get;
-    set
-    {
-      SetProperty(ref field, value);
-      if (!_isUpdatingSelectionFormatStates)
-      {
-        Document.Selection.CharacterFormat.Underline = (Document.Selection.CharacterFormat.Underline == UnderlineType.Single) ? UnderlineType.None : UnderlineType.Single;
-      }
-    }
-  }
-
-  public bool IsSelectionStrikethrough
-  {
-    get;
-    set
-    {
-      SetProperty(ref field, value);
-      if (!_isUpdatingSelectionFormatStates)
-      {
-        Document.Selection.CharacterFormat.Strikethrough = FormatEffect.Toggle;
-      }
-    }
-  }
-  #endregion
-
-  #region Font Size
-  public readonly ImmutableList<string> FontSizes = ["8", "9", "10.5", "12", "14", "16", "18", "20", "24", "28", "32", "36", "48", "60", "72"];
-
-  public string SelectionFontSizeText
-  {
-    get;
-    set
-    {
-      if (ValidateFontSize(ref value))
-      {
-        SetProperty(ref field, value);
-        if (!_isUpdatingSelectionFormatStates)
-        {
-          Document.Selection.CharacterFormat.Size = SelectionFontSize;
-        }
-      }
-      else
-      {
-        SetProperty(ref field, string.Empty);
-      }
-
-      DecreaseSelectionFontSizeCommand?.NotifyCanExecuteChanged();
-      IncreaseSelectionFontSizeCommand?.NotifyCanExecuteChanged();
-    }
-  } = string.Empty;
-
-  public float SelectionFontSize => float.TryParse(SelectionFontSizeText, out float fontSize) ? fontSize : 10.5f;
-
-  private static readonly float _minEditorFontSize = 5.0f;
-  private static readonly float _maxEditorFontSize = 512.0f;
-
-  private static bool ValidateFontSize(ref string fontSizeText)
-  {
-    if (!string.IsNullOrWhiteSpace(fontSizeText)
-      && float.TryParse(fontSizeText, out float fontSize)
-      && fontSize >= _minEditorFontSize
-      && fontSize <= _maxEditorFontSize)
-    {
-      float eps = 1e-6f;
-      float truncated = (float)Math.Truncate(fontSize * 100) / 100f;
-      float fraction = Math.Abs(fontSize - (float)Math.Floor(fontSize));
-
-      if (Math.Abs(fraction - 0.0f) < eps || Math.Abs(fraction - 0.5f) < eps)
-      {
-        if (Math.Abs(fontSize - truncated) < eps)
-        {
-          return true;
-        }
-      }
-    }
-
-    fontSizeText = string.Empty;
-    return false;
-  }
-  #endregion
-
-  #region Font Color
-  public IReadOnlyList<SolidColorBrush> PaletteFontColors { get; } = [.. AppColors.DefaultPaletteColors.Select(c => new SolidColorBrush(c.ToColor()))];
-
-  public SolidColorBrush? SelectedPaletteFontColor
-  {
-    get;
-    set
-    {
-      if (SetProperty(ref field, value) && value is not null)
-      {
-        SelectionFontColor = value.Color;
-      }
-    }
-  }
-
-  [ObservableProperty]
-  public partial Color RecentFontColor { get; set; } = Colors.Black;
-
-  public Color SelectionFontColor
-  {
-    get;
-    set
-    {
-      if (SetProperty(ref field, value))
-      {
-        SelectedPaletteFontColor = PaletteFontColors.FirstOrDefault(b => b.Color == value);
-        if (!_isUpdatingSelectionFormatStates)
-        {
-          Document.Selection.CharacterFormat.ForegroundColor = value;
-          RecentFontColor = value;
-        }
-      }
-    }
-  }
-  #endregion
-
-  #region Text Highlight Color
-  public IReadOnlyList<SolidColorBrush> PaletteHighlightColors { get; } = [.. AppColors.DefaultPaletteColors.Select(c => new SolidColorBrush(c.ToColor()))];
-
-  public SolidColorBrush? SelectedPaletteHighlightColor
-  {
-    get;
-    set
-    {
-      if (SetProperty(ref field, value) && value is not null)
-      {
-        SelectionHighlightColor = value.Color;
-      }
-    }
-  }
-
-  [ObservableProperty]
-  public partial Color RecentHighlightColor { get; set; } = Colors.Transparent;
-
-  public Color SelectionHighlightColor
-  {
-    get;
-    set
-    {
-      if (SetProperty(ref field, value))
-      {
-        SelectedPaletteHighlightColor = PaletteHighlightColors.FirstOrDefault(b => b.Color == value);
-        ChangeSelectionHighlightColorToAutomaticCommand?.NotifyCanExecuteChanged();
-
-        if (!_isUpdatingSelectionFormatStates)
-        {
-          Document.Selection.CharacterFormat.BackgroundColor = value;
-          RecentHighlightColor = value;
-        }
-      }
-    }
-  }
-  #endregion
-
-  #region Bullets and Numbering
-  public bool IsSelectionParagraphList
-  {
-    get;
-    set
-    {
-      if (SetProperty(ref field, value))
-      {
-        if (!_isUpdatingSelectionFormatStates)
-        {
-          Document.Selection.ParagraphFormat.ListType = value ? _recentMarkerType : MarkerType.None;
-          Document.Selection.ParagraphFormat.ListStyle = value ? _recentMarkerStyle : MarkerStyle.Undefined;
-        }
-      }
-    }
-  }
-
-  public static readonly BijectiveMap<MarkerType, string> _markerTypeMap = new()
-  {
-    { MarkerType.None,  "\u25cc" },
-    { MarkerType.Bullet, "\u2022" },
-    { MarkerType.Arabic, "1" },
-    { MarkerType.LowercaseEnglishLetter, "a" },
-    { MarkerType.UppercaseEnglishLetter,  "A" },
-    { MarkerType.LowercaseRoman, "\u2170" },
-    { MarkerType.UppercaseRoman, "\u2160" },
-    { MarkerType.CircledNumber, "\u2460" }
-  };
-  public IReadOnlyBijectiveMap<MarkerType, string> MarkerTypeMap => _markerTypeMap;
-
-  public static readonly BijectiveMap<MarkerStyle, string> _markerStyleMap = new()
-  {
-    { MarkerStyle.Parenthesis, ")" },
-    { MarkerStyle.Parentheses, "( )" },
-    { MarkerStyle.Period, "." },
-    { MarkerStyle.Minus,  "-" },
-  };
-  public IReadOnlyBijectiveMap<MarkerStyle, string> MarkerStyleMap => _markerStyleMap;
-
-  private MarkerType _recentMarkerType = MarkerType.Bullet;
-  private MarkerStyle _recentMarkerStyle = MarkerStyle.Parenthesis;
-
-  public MarkerType SelectionMarkerType
-  {
-    get;
-    set
-    {
-      if (SetProperty(ref field, value))
-      {
-        SelectedMarkerType = MarkerTypeMap.TryGetRight(value, out var markerType) ? markerType : null;
-        if (!_isUpdatingSelectionFormatStates)
-        {
-          Document.Selection.ParagraphFormat.ListType = value;
-          if (value is not MarkerType.None)
-          {
-            _recentMarkerType = value;
-          }
-        }
-      }
-    }
-  }
-
-  public string? SelectedMarkerType
-  {
-    get;
-    set
-    {
-      if (SetProperty(ref field, value) && value is not null)
-      {
-        SelectionMarkerType = MarkerTypeMap.TryGetLeft(value, out var markerType) ? markerType : MarkerType.Undefined;
-      }
-    }
-  }
-
-  public MarkerStyle SelectionMarkerStyle
-  {
-    get;
-    set
-    {
-      if (SetProperty(ref field, value))
-      {
-        SelectedMarkerStyle = SelectionMarkerType switch
-        {
-          MarkerType.None or MarkerType.Undefined or MarkerType.Bullet => null,
-          _ => MarkerStyleMap.TryGetRight(value, out var markerStyle) ? markerStyle : null
-        };
-
-        if (!_isUpdatingSelectionFormatStates)
-        {
-          Document.Selection.ParagraphFormat.ListStyle = value;
-          _recentMarkerStyle = value;
-        }
-      }
-    }
-  }
-
-  public string? SelectedMarkerStyle
-  {
-    get;
-    set
-    {
-      if (SetProperty(ref field, value) && value is not null)
-      {
-        SelectionMarkerStyle = MarkerStyleMap.TryGetLeft(value, out var markerStyle) ? markerStyle : MarkerStyle.Undefined;
-      }
-    }
-  }
-
-  [ObservableProperty]
-  public partial bool IsSelectionMarkerStyleEnabled { get; set; }
-  #endregion
 }
 
+// Body(본문) 속성 이외의 Note, NoteViewState 속성 관련
 partial class NoteEditorViewModel
 {
   private static readonly IReadOnlyDictionary<string, PatchDescriptor<NoteModel, string, NotePatchDto>> NotePatchDescriptors = new Dictionary<string, PatchDescriptor<NoteModel, string, NotePatchDto>>()
@@ -775,8 +320,455 @@ partial class NoteEditorViewModel
       }
     },
   };
+
+  private async Task<UpdateNoteResult> UpdateAsync(string propertyName) => NotePatchDescriptors.TryGetValue(propertyName, out var notePatchDescriptor)
+    ? await NoteUpdateCoordinator.Submit(notePatchDescriptor.Key, notePatchDescriptor.CreatePatch(Note), notePatchDescriptor.BatchMode)
+    : new UpdateNoteResult() { Status = AppUpdateStatus.Failed };
+
+  // Note 속성 변경 시 변경 속성과 값 Patch
+  // 뷰(NotePage 및 NoteWindow)에 속성 바인딩(TwoWay)으로 전달할 수 없는 동작 정의 및 실행
+  private async void Note_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+  {
+    if (e.PropertyName is null)
+    {
+      return;
+    }
+
+    if (ViewStatePatchDescriptors.TryGetValue(e.PropertyName, out var viewStatePatchDescriptor))
+    {
+      ViewStateUpdateCoordinator.Submit(viewStatePatchDescriptor.Key, viewStatePatchDescriptor.CreatePatch(Note), viewStatePatchDescriptor.BatchMode);
+    }
+
+    // 뷰에 반영(TwoWay 바인딩 시) 
+    switch (e.PropertyName)
+    {
+      case nameof(Note.BackgroundColor):
+        SelectedPaletteBackgroundColor = PaletteBackgroundColors.FirstOrDefault(b => b.Color == Note.BackgroundColor);
+        ChangeSystemBackdropExtended();
+        var updateResult = await UpdateAsync(nameof(NoteModel.BackgroundColor));
+        break;
+      case nameof(Note.BackdropKind):
+        ChangeSystemBackdrop();
+        ChangeSystemBackdropExtended();
+        if (Note.BackdropKind is not BackdropKind.None)
+        {
+          Note.ShowBackgroundImage = false;
+        }
+        break;
+      case nameof(Note.BackdropTintOpacity):
+        ChangeSystemBackdropExtended();
+        break;
+      case nameof(Note.BackdropLuminosityOpacity):
+        ChangeSystemBackdropExtended();
+        break;
+    }
+  }
+
+  // Background 관련 뷰모델 속성 정의
+  #region Background & Backdrop
+  public IReadOnlyList<SolidColorBrush> PaletteBackgroundColors { get; } = [.. AppColors.DefaultPaletteColors.Select(c => new SolidColorBrush(c.ToColor()))];
+
+  private SolidColorBrush? _selectedPaletteBackgroundColor;
+  public SolidColorBrush? SelectedPaletteBackgroundColor
+  {
+    get => _selectedPaletteBackgroundColor;
+    set
+    {
+      if (SetProperty(ref _selectedPaletteBackgroundColor, value) && value is not null)
+      {
+        Note.BackgroundColor = value.Color;
+      }
+    }
+  }
+
+  private AlignmentX _backgroundImageAlignmentX;
+  public AlignmentX BackgroundImageAlignmentX
+  {
+    get => _backgroundImageAlignmentX;
+    set
+    {
+      if (Enum.IsDefined(value))
+      {
+        SetProperty(ref _backgroundImageAlignmentX, value);
+        Note.BackgroundImageAlignment = GeometryHelper.GetAlignmentPosition(value, BackgroundImageAlignmentY);
+      }
+    }
+  }
+
+  private AlignmentY _backgroundImageAlignmentY;
+  public AlignmentY BackgroundImageAlignmentY
+  {
+    get => _backgroundImageAlignmentY;
+    set
+    {
+      if (Enum.IsDefined(value))
+      {
+        SetProperty(ref _backgroundImageAlignmentY, value);
+        Note.BackgroundImageAlignment = GeometryHelper.GetAlignmentPosition(BackgroundImageAlignmentX, value);
+      }
+    }
+  }
+
+  public void ChangeSystemBackdrop()
+  {
+    NoteWindowService.TryExecuteOnWindow(Note.Id, (noteWindow) =>
+    {
+      noteWindow.SystemBackdrop = Note.BackdropKind switch
+      {
+        BackdropKind.None => null,
+        BackdropKind.Acrylic => new ExtendedAcrylicBackdrop(),
+        BackdropKind.Mica => new ExtendedMicaBackdrop(),
+        _ => throw new InvalidOperationException()
+      };
+    });
+  }
+
+  public void ChangeSystemBackdropExtended()
+  {
+    NoteWindowService.TryExecuteOnWindow(Note.Id, (noteWindow) =>
+    {
+      if (noteWindow.SystemBackdrop is ExtendedSystemBackdrop backdrop)
+      {
+        backdrop.TintColor = Note.BackgroundColor;
+        backdrop.TintOpacity = Note.BackdropTintOpacity;
+        backdrop.LuminosityOpacity = Note.BackdropLuminosityOpacity;
+        backdrop.FallbackColor = Common.Helpers.ColorHelper.GetFallbackColor(Note.BackgroundColor, Note.BackdropTintOpacity);
+      }
+    });
+  }
+  #endregion
+
 }
 
+// TextEditor(RichEditDocument), 본문(Body 속성) 및 본문 서식 관련
+partial class NoteEditorViewModel
+{
+  private bool _isUpdatingSelectionFormatStates = false;
+  public void UpdateSelectionFormatStates()
+  {
+    _isUpdatingSelectionFormatStates = true;
+    var characterFormat = Document.Selection.CharacterFormat;
+    var paragraphFormat = Document.Selection.ParagraphFormat;
+
+    IsSelectionBold = characterFormat.Bold is FormatEffect.On;
+    IsSelectionItalic = characterFormat.Italic is FormatEffect.On;
+    IsSelectionUnderlined = characterFormat.Underline is UnderlineType.Single;
+    IsSelectionStrikethrough = characterFormat.Strikethrough is FormatEffect.On;
+    SelectionFontSizeText = characterFormat.Size > 0 ? characterFormat.Size.ToString() : string.Empty;
+    SelectionFontColor = characterFormat.ForegroundColor;
+    SelectionHighlightColor = characterFormat.BackgroundColor;
+    IsSelectionParagraphList = paragraphFormat.ListType is not (MarkerType.Undefined or MarkerType.None);
+    SelectionMarkerType = paragraphFormat.ListType;
+    SelectionMarkerStyle = paragraphFormat.ListStyle;
+    IsSelectionMarkerStyleEnabled = SelectionMarkerType is not (MarkerType.None or MarkerType.Undefined or MarkerType.Bullet);
+    _isUpdatingSelectionFormatStates = false;
+  }
+
+  #region Bold, Italic, Underline, Strikethrough
+  public bool IsSelectionBold
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value))
+      {
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.CharacterFormat.Bold = FormatEffect.Toggle;
+        }
+      }
+    }
+  }
+
+  public bool IsSelectionItalic
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value))
+      {
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.CharacterFormat.Italic = FormatEffect.Toggle;
+        }
+      }
+    }
+  }
+
+  public bool IsSelectionUnderlined
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value))
+      {
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.CharacterFormat.Underline = (Document.Selection.CharacterFormat.Underline == UnderlineType.Single) ? UnderlineType.None : UnderlineType.Single;
+        }
+      }
+    }
+  }
+
+  public bool IsSelectionStrikethrough
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value))
+      {
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.CharacterFormat.Strikethrough = FormatEffect.Toggle;
+        }
+      }
+    }
+  }
+  #endregion
+
+  #region Bullets and Numbering
+  public bool IsSelectionParagraphList
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value))
+      {
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.ParagraphFormat.ListType = value ? _recentMarkerType : MarkerType.None;
+          Document.Selection.ParagraphFormat.ListStyle = value ? _recentMarkerStyle : MarkerStyle.Undefined;
+        }
+      }
+    }
+  }
+
+  public static readonly BijectiveMap<MarkerType, string> _markerTypeMap = new()
+  {
+    { MarkerType.None,  "\u25cc" },
+    { MarkerType.Bullet, "\u2022" },
+    { MarkerType.Arabic, "1" },
+    { MarkerType.LowercaseEnglishLetter, "a" },
+    { MarkerType.UppercaseEnglishLetter,  "A" },
+    { MarkerType.LowercaseRoman, "\u2170" },
+    { MarkerType.UppercaseRoman, "\u2160" },
+    { MarkerType.CircledNumber, "\u2460" }
+  };
+  public IReadOnlyBijectiveMap<MarkerType, string> MarkerTypeMap => _markerTypeMap;
+
+  public static readonly BijectiveMap<MarkerStyle, string> _markerStyleMap = new()
+  {
+    { MarkerStyle.Parenthesis, ")" },
+    { MarkerStyle.Parentheses, "( )" },
+    { MarkerStyle.Period, "." },
+    { MarkerStyle.Minus,  "-" },
+  };
+  public IReadOnlyBijectiveMap<MarkerStyle, string> MarkerStyleMap => _markerStyleMap;
+
+  private MarkerType _recentMarkerType = MarkerType.Bullet;
+  private MarkerStyle _recentMarkerStyle = MarkerStyle.Parenthesis;
+
+  public MarkerType SelectionMarkerType
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value))
+      {
+        SelectedMarkerType = MarkerTypeMap.TryGetRight(value, out var markerType) ? markerType : null;
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.ParagraphFormat.ListType = value;
+          if (value is not MarkerType.None)
+          {
+            _recentMarkerType = value;
+          }
+        }
+      }
+    }
+  }
+
+  public string? SelectedMarkerType
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value) && value is not null)
+      {
+        SelectionMarkerType = MarkerTypeMap.TryGetLeft(value, out var markerType) ? markerType : MarkerType.Undefined;
+      }
+    }
+  }
+
+  public MarkerStyle SelectionMarkerStyle
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value))
+      {
+        SelectedMarkerStyle = SelectionMarkerType switch
+        {
+          MarkerType.None or MarkerType.Undefined or MarkerType.Bullet => null,
+          _ => MarkerStyleMap.TryGetRight(value, out var markerStyle) ? markerStyle : null
+        };
+
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.ParagraphFormat.ListStyle = value;
+          _recentMarkerStyle = value;
+        }
+      }
+    }
+  }
+
+  public string? SelectedMarkerStyle
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value) && value is not null)
+      {
+        SelectionMarkerStyle = MarkerStyleMap.TryGetLeft(value, out var markerStyle) ? markerStyle : MarkerStyle.Undefined;
+      }
+    }
+  }
+
+  [ObservableProperty]
+  public partial bool IsSelectionMarkerStyleEnabled { get; private set; }
+
+  #region Font Size
+  public readonly ImmutableList<string> FontSizes = ["8", "9", "10.5", "12", "14", "16", "18", "20", "24", "28", "32", "36", "48", "60", "72"];
+
+  public string SelectionFontSizeText
+  {
+    get;
+    set
+    {
+      if (ValidateFontSize(ref value))
+      {
+        SetProperty(ref field, value);
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.CharacterFormat.Size = SelectionFontSize;
+        }
+      }
+      else
+      {
+        SetProperty(ref field, string.Empty);
+      }
+
+      DecreaseSelectionFontSizeCommand?.NotifyCanExecuteChanged();
+      IncreaseSelectionFontSizeCommand?.NotifyCanExecuteChanged();
+    }
+  } = string.Empty;
+
+  public float SelectionFontSize => float.TryParse(SelectionFontSizeText, out float fontSize) ? fontSize : 10.5f;
+
+  private static readonly float _minEditorFontSize = 5.0f;
+  private static readonly float _maxEditorFontSize = 512.0f;
+
+  private static bool ValidateFontSize(ref string fontSizeText)
+  {
+    if (!string.IsNullOrWhiteSpace(fontSizeText)
+      && float.TryParse(fontSizeText, out float fontSize)
+      && fontSize >= _minEditorFontSize
+      && fontSize <= _maxEditorFontSize)
+    {
+      float eps = 1e-6f;
+      float truncated = (float)Math.Truncate(fontSize * 100) / 100f;
+      float fraction = Math.Abs(fontSize - (float)Math.Floor(fontSize));
+
+      if (Math.Abs(fraction - 0.0f) < eps || Math.Abs(fraction - 0.5f) < eps)
+      {
+        if (Math.Abs(fontSize - truncated) < eps)
+        {
+          return true;
+        }
+      }
+    }
+
+    fontSizeText = string.Empty;
+    return false;
+  }
+  #endregion
+
+  #region Font Color
+  public IReadOnlyList<SolidColorBrush> PaletteFontColors { get; } = [.. AppColors.DefaultPaletteColors.Select(c => new SolidColorBrush(c.ToColor()))];
+
+  public SolidColorBrush? SelectedPaletteFontColor
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value) && value is not null)
+      {
+        SelectionFontColor = value.Color;
+      }
+    }
+  }
+
+  [ObservableProperty]
+  public partial Color RecentFontColor { get; set; } = Colors.Black;
+
+  public Color SelectionFontColor
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value))
+      {
+        SelectedPaletteFontColor = PaletteFontColors.FirstOrDefault(b => b.Color == value);
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.CharacterFormat.ForegroundColor = value;
+          RecentFontColor = value;
+        }
+      }
+    }
+  }
+  #endregion
+
+  #region Text Highlight Color
+  public IReadOnlyList<SolidColorBrush> PaletteHighlightColors { get; } = [.. AppColors.DefaultPaletteColors.Select(c => new SolidColorBrush(c.ToColor()))];
+
+  public SolidColorBrush? SelectedPaletteHighlightColor
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value) && value is not null)
+      {
+        SelectionHighlightColor = value.Color;
+      }
+    }
+  }
+
+  [ObservableProperty]
+  public partial Color RecentHighlightColor { get; set; } = Colors.Transparent;
+
+  public Color SelectionHighlightColor
+  {
+    get;
+    set
+    {
+      if (SetProperty(ref field, value))
+      {
+        SelectedPaletteHighlightColor = PaletteHighlightColors.FirstOrDefault(b => b.Color == value);
+        ChangeSelectionHighlightColorToAutomaticCommand?.NotifyCanExecuteChanged();
+
+        if (!_isUpdatingSelectionFormatStates)
+        {
+          Document.Selection.CharacterFormat.BackgroundColor = value;
+          RecentHighlightColor = value;
+        }
+      }
+    }
+  }
+  #endregion
+}
+
+// Commands
 partial class NoteEditorViewModel
 {
   public Command UpdateSelectionCommand { get; private set; }
@@ -802,27 +794,31 @@ partial class NoteEditorViewModel
   public readonly int PreviewTextMaxLength = 500;
 
   private readonly DispatcherTimer _bodyEditorBatchTimer = new() { Interval = TimeSpan.FromMilliseconds(2000) };
-  private Task? _updateNoteBodyTask;
+  private Task _updateNoteBodyTask = Task.CompletedTask;
 
   private void BodyEditorBatchTimer_Tick(object? sender, object e) => _updateNoteBodyTask = UpdateNoteBodyAsync();
 
-  public async Task UpdateNoteBodyAsync(CancellationToken cancellationToken = default)
+  public async Task<bool> UpdateNoteBodyAsync(CancellationToken cancellationToken = default)
   {
     _bodyEditorBatchTimer.Stop();
 
-    using (IRandomAccessStream randomAccessStream = new InMemoryRandomAccessStream())
+    if (State is NoteEditorViewModelState.Loaded)
     {
+      using IRandomAccessStream randomAccessStream = new InMemoryRandomAccessStream();
       Document.SaveToStream(TextGetOptions.FormatRtf, randomAccessStream);
       Note.Body = await StreamHelper.ToByteArrayAsync(randomAccessStream, cancellationToken);
       await UpdateAsync(nameof(NoteModel.Body));
-    }
 
-    if (_shouldChangePreview)
-    {
-      WeakReferenceMessenger.Default.Send(new NotePreviewUpdateRequestedMessage(Note.Id), MessageToken<NoteId>.Create(Note.Id));
+      if (_shouldChangePreview)
+      {
+        WeakReferenceMessenger.Default.Send(new NotePreviewUpdateRequestedMessage(Note.Id), MessageToken<NoteId>.Create(Note.Id));
+      }
+
+      return true;
     }
 
     _shouldChangePreview = false;
+    return false;
   }
 
   [MemberNotNull(nameof(UpdateSelectionCommand), nameof(UpdateTextChangingCommand), nameof(UpdateTextChangedCommand), nameof(DecreaseSelectionFontSizeCommand), nameof(IncreaseSelectionFontSizeCommand), nameof(ChangeSelectionFontColorCommand), nameof(ChangeSelectionHighlightColorCommand), nameof(ChangeSelectionHighlightColorToAutomaticCommand), nameof(EnterEditModeCommand), nameof(BrowseBackgroundImageCommand), nameof(ChangeBackdropTintOpacityToDefaultCommand), nameof(ChangeBackdropLuminosityOpacityToDefaultCommand), nameof(ChangeBackgroundImageOpacityToDefaultCommand), nameof(ChangeBackgroundImageBlurToDefaultCommand))]
@@ -851,12 +847,7 @@ partial class NoteEditorViewModel
       ExecuteFunc = async () =>
       {
         UpdateSelectionFormatStates();
-
-        if (_updateNoteBodyTask is not null)
-        {
-          await _updateNoteBodyTask;
-        }
-
+        await _updateNoteBodyTask;
         _bodyEditorBatchTimer.Start();
       }
     };
@@ -958,5 +949,14 @@ partial class NoteEditorViewModel
       ExecuteAction = () => Note.BackgroundImageBlur = NoteSettingsDescriptors.NoteBackgroundImageBlur
     };
   }
+  #endregion
 }
 
+internal enum NoteEditorViewModelState
+{
+  Initializing,
+  DocumentReady,
+  Loaded,
+  Failed,
+  Disposing
+}

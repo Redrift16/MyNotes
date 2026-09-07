@@ -38,6 +38,7 @@ public sealed partial class TextContentControl : Control
   {
     DefaultStyleKey = typeof(TextContentControl);
     IsEnabledChanged += TextBlockControl_IsEnabledChanged;
+    this.Loaded += TextContentControl_Loaded;
   }
 
   protected override void OnApplyTemplate()
@@ -48,9 +49,7 @@ public sealed partial class TextContentControl : Control
 
   private void TextBlockControl_IsEnabledChanged(object sender, DependencyPropertyChangedEventArgs e) => UpdateEnabledVisualState();
 
-  private void UpdateEnabledVisualState()
-  {
-    string stateName = IsEnabled ? "Enabled" : "Disabled";
-    VisualStateManager.GoToState(this, stateName, false);
-  }
+  private void TextContentControl_Loaded(object sender, RoutedEventArgs e) => UpdateEnabledVisualState();
+
+  private void UpdateEnabledVisualState() => VisualStateManager.GoToState(this, IsEnabled ? "Enabled" : "Disabled", false);
 }

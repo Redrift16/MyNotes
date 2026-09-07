@@ -219,4 +219,10 @@
   <data name="FileSavePickerOriginalFileFormat" xml:space="preserve">
     <value>원본 파일 형식</value>
   </data>
+  <data name="Message_Saved" xml:space="preserve">
+    <value>저장됨</value>
+  </data>
+  <data name="Message_Failed" xml:space="preserve">
+    <value>실패함</value>
+  </data>
 </root>

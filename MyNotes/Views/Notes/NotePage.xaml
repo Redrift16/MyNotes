@@ -401,7 +401,8 @@
 
     <!--#region Find and Replace -->
     <templates:FindReplaceBox x:Name="NotePage_FindReplaceBox"
-                              Grid.Row="2"
+                              Grid.Row="1"
+                              Grid.RowSpan="2"
                               VerticalAlignment="Top"
                               HorizontalAlignment="Right"
                               TargetEditor="{x:Bind NotePage_TextEditorRichEditBox}"
@@ -472,8 +473,10 @@
                                                  IsChecked="{x:Bind EditorViewModel.IsSelectionParagraphList, Mode=TwoWay}">
 
             <templates:SubtleIconToggleSplitButton.Flyout>
-              <Flyout Placement="Top"
-                      ShouldConstrainToRootBounds="False">
+              <Flyout x:Name="NotePage_BulletsAndNumberingButtonFlyout"
+                      Placement="Top"
+                      ShouldConstrainToRootBounds="False"
+                      FlyoutPresenterStyle="{StaticResource DefaultThemeFlyoutPresenterStyle}">
                 <StackPanel Spacing="12">
                   <TextBlock x:Uid="/NotePage/MarkerTypeTextBlock"
                              Style="{StaticResource BodyStrongTextBlockStyle}" />
@@ -518,16 +521,14 @@
                     </GridView.ItemsPanel>
                     <GridView.ItemTemplate>
                       <DataTemplate x:DataType="x:String">
-                        <Border Width="40"
-                                Height="40">
-                          <TextBlock Text="{x:Bind}"
-                                     TextAlignment="Center"
-                                     HorizontalAlignment="Center"
-                                     VerticalAlignment="Center"
-                                     Padding="0,0,0,6"
-                                     FontWeight="Light"
-                                     FontSize="20" />
-                        </Border>
+                        <templates:TextContentControl Width="40"
+                                                      Height="40"
+                                                      Text="{x:Bind}"
+                                                      HorizontalContentAlignment="Center"
+                                                      VerticalContentAlignment="Center"
+                                                      Padding="0,0,0,6"
+                                                      FontWeight="Light"
+                                                      FontSize="20" />
                       </DataTemplate>
                     </GridView.ItemTemplate>
                   </GridView>
@@ -546,8 +547,10 @@
                                       x:Uid="/NotePage/FontSizeButton"
                                       Content="{ctw:FontIcon Glyph=&#xE8E9;}">
             <templates:SubtleIconButton.Flyout>
-              <Flyout Placement="Top"
-                      ShouldConstrainToRootBounds="False">
+              <Flyout x:Name="NotePage_FontSizeButtonFlyout"
+                      Placement="Top"
+                      ShouldConstrainToRootBounds="False"
+                      FlyoutPresenterStyle="{StaticResource DefaultThemeFlyoutPresenterStyle}">
                 <StackPanel Spacing="12">
                   <TextBlock x:Uid="/NotePage/FontSizeFlyoutHeaderTextBlock"
                              Style="{StaticResource BodyStrongTextBlockStyle}" />
@@ -603,8 +606,10 @@
             </mxi:Interaction.Behaviors>
 
             <templates:SubtleIconSplitButton.SecondaryFlyout>
-              <Flyout Placement="Top"
-                      ShouldConstrainToRootBounds="False">
+              <Flyout x:Name="NotePage_FontColorButtonFlyout"
+                      Placement="Top"
+                      ShouldConstrainToRootBounds="False"
+                      FlyoutPresenterStyle="{StaticResource DefaultThemeFlyoutPresenterStyle}">
                 <StackPanel Spacing="12"
                             Width="340">
                   <TextBlock x:Uid="/NotePage/FontColorFlyoutHeaderTextBlock"
@@ -684,8 +689,10 @@
             </mxi:Interaction.Behaviors>
 
             <templates:SubtleIconSplitButton.SecondaryFlyout>
-              <Flyout Placement="Top"
-                      ShouldConstrainToRootBounds="False">
+              <Flyout x:Name="NotePage_HighlightColorButtonFlyout"
+                      Placement="Top"
+                      ShouldConstrainToRootBounds="False"
+                      FlyoutPresenterStyle="{StaticResource DefaultThemeFlyoutPresenterStyle}">
                 <StackPanel Spacing="12"
                             Width="340">
                   <TextBlock x:Uid="/NotePage/TextHighlightColorFlyoutHeaderTextBlock"
@@ -781,7 +788,7 @@
                                     x:Uid="/NotePage/BackgroundButton"
                                     Content="{ctw:FontIcon Glyph=&#xE790;}">
           <templates:SubtleIconButton.Flyout>
-            <Flyout x:Name="NotePage_BackgroundFlyout"
+            <Flyout x:Name="NotePage_BackgroundButtonFlyout"
                     Placement="Top"
                     ShouldConstrainToRootBounds="False"
                     FlyoutPresenterStyle="{StaticResource DefaultThemeFlyoutPresenterStyle}">
@@ -791,7 +798,7 @@
                 <TextBlock x:Uid="/NotePage/BackgroundFlyoutHeaderTextBlock"
                            Style="{StaticResource BodyStrongTextBlockStyle}"
                            Margin="0,0,0,12" />
-                <ctwc:Segmented x:Name="NotePage_BackgroundFlyoutSegmented"
+                <ctwc:Segmented x:Name="NotePage_BackgroundButtonFlyoutSegmented"
                                 HorizontalAlignment="Stretch"
                                 SelectedIndex="0">
                   <ctwc:SegmentedItem x:Uid="/NotePage/BackgroundFlyoutColorSegmentedItem"
@@ -804,7 +811,7 @@
                                       Icon="{ctw:FontIcon Glyph=&#xE91B;}"
                                       HorizontalAlignment="Stretch" />
                 </ctwc:Segmented>
-                <ctwc:SwitchPresenter Value="{x:Bind NotePage_BackgroundFlyoutSegmented.SelectedIndex, Mode=OneWay}">
+                <ctwc:SwitchPresenter Value="{x:Bind NotePage_BackgroundButtonFlyoutSegmented.SelectedIndex, Mode=OneWay}">
                   <!-- Background Color -->
                   <ctwc:Case>
                     <ctwc:Case.Value>
@@ -883,85 +890,88 @@
 
                       <NavigationViewItemSeparator />
 
-                      <Grid RowSpacing="4"
-                            ColumnSpacing="8">
-                        <Grid.RowDefinitions>
-                          <RowDefinition Height="Auto" />
-                          <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="Auto" />
-                          <ColumnDefinition />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                      <ContentControl HorizontalContentAlignment="Stretch"
+                                      IsEnabled="{x:Bind helpers:ObjectHelper.IsNotEqual(Note.BackdropKind, manm:BackdropKind.None), Mode=OneWay}">
+                        <Grid RowSpacing="4"
+                              ColumnSpacing="8">
+                          <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                          </Grid.RowDefinitions>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
 
-                        <TextBlock x:Uid="/NotePage/BackdropTintOpacityHeaderTextBlock"
-                                   Grid.Row="0"
-                                   Grid.Column="0"
-                                   Grid.ColumnSpan="3" />
+                          <templates:TextContentControl x:Uid="/NotePage/BackdropTintOpacityHeaderTextBlock"
+                                                        Grid.Row="0"
+                                                        Grid.Column="0"
+                                                        Grid.ColumnSpan="3" />
 
-                        <TextBlock Grid.Row="1"
-                                   Grid.Column="0"
-                                   VerticalAlignment="Center"
-                                   TextAlignment="Center"
-                                   Width="32"
-                                   Text="{x:Bind helpers:NumericHelper.Round(Note.BackdropTintOpacity, 2), Mode=OneWay}" />
-                        <Slider Grid.Row="1"
-                                Grid.Column="1"
-                                VerticalAlignment="Center"
-                                Minimum="0"
-                                Maximum="1"
-                                StepFrequency="0.01"
-                                IsThumbToolTipEnabled="False"
-                                Value="{x:Bind Note.BackdropTintOpacity, Mode=TwoWay}"
-                                IsEnabled="{x:Bind helpers:ObjectHelper.IsNotEqual(Note.BackdropKind, manm:BackdropKind.None), Mode=OneWay}" />
-                        <templates:SubtleIconButton Grid.Row="1"
-                                                    Grid.Column="2"
-                                                    Content="{ctw:FontIcon Glyph=&#xE72C;}"
-                                                    Style="{StaticResource SubtleIconButtonStyle_32x16}"
-                                                    IsEnabled="{x:Bind helpers:ObjectHelper.IsNotEqual(Note.BackdropKind, manm:BackdropKind.None), Mode=OneWay}"
-                                                    Command="{x:Bind EditorViewModel.ChangeBackdropTintOpacityToDefaultCommand}" />
-                      </Grid>
+                          <templates:TextContentControl Grid.Row="1"
+                                                        Grid.Column="0"
+                                                        VerticalAlignment="Center"
+                                                        HorizontalContentAlignment="Center"
+                                                        Width="32"
+                                                        Text="{x:Bind helpers:NumericHelper.Round(Note.BackdropTintOpacity, 2), Mode=OneWay}" />
+                          <Slider Grid.Row="1"
+                                  Grid.Column="1"
+                                  VerticalAlignment="Center"
+                                  Minimum="0"
+                                  Maximum="1"
+                                  StepFrequency="0.01"
+                                  IsThumbToolTipEnabled="False"
+                                  Value="{x:Bind Note.BackdropTintOpacity, Mode=TwoWay}" />
+                          <templates:SubtleIconButton Grid.Row="1"
+                                                      Grid.Column="2"
+                                                      Content="{ctw:FontIcon Glyph=&#xE72C;}"
+                                                      Style="{StaticResource SubtleIconButtonStyle_32x16}"
+                                                      Command="{x:Bind EditorViewModel.ChangeBackdropTintOpacityToDefaultCommand}" />
+                        </Grid>
+                      </ContentControl>
 
-                      <Grid RowSpacing="4"
-                            ColumnSpacing="8">
-                        <Grid.RowDefinitions>
-                          <RowDefinition Height="Auto" />
-                          <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="Auto" />
-                          <ColumnDefinition />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                      <ContentControl HorizontalContentAlignment="Stretch"
+                                      IsEnabled="{x:Bind helpers:ObjectHelper.IsNotEqual(Note.BackdropKind, manm:BackdropKind.None), Mode=OneWay}">
+                        <Grid RowSpacing="4"
+                              ColumnSpacing="8">
+                          <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                          </Grid.RowDefinitions>
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
 
-                        <TextBlock x:Uid="/NotePage/BackdropLuminosityOpacityHeaderTextBlock"
-                                   Grid.Row="0"
-                                   Grid.Column="0"
-                                   Grid.ColumnSpan="3" />
+                          <templates:TextContentControl x:Uid="/NotePage/BackdropLuminosityOpacityHeaderTextBlock"
+                                                        Grid.Row="0"
+                                                        Grid.Column="0"
+                                                        Grid.ColumnSpan="3" />
 
-                        <TextBlock Grid.Row="1"
-                                   Grid.Column="0"
-                                   VerticalAlignment="Center"
-                                   TextAlignment="Center"
-                                   Width="32"
-                                   Text="{x:Bind helpers:NumericHelper.Round(Note.BackdropLuminosityOpacity, 2), Mode=OneWay}" />
-                        <Slider Grid.Row="1"
-                                Grid.Column="1"
-                                VerticalAlignment="Center"
-                                Minimum="0"
-                                Maximum="1"
-                                StepFrequency="0.01"
-                                IsThumbToolTipEnabled="False"
-                                Value="{x:Bind Note.BackdropLuminosityOpacity, Mode=TwoWay}"
-                                IsEnabled="{x:Bind helpers:ObjectHelper.IsNotEqual(Note.BackdropKind, manm:BackdropKind.None), Mode=OneWay}" />
-                        <templates:SubtleIconButton Grid.Row="1"
-                                                    Grid.Column="2"
-                                                    Content="{ctw:FontIcon Glyph=&#xE72C;}"
-                                                    Style="{StaticResource SubtleIconButtonStyle_32x16}"
-                                                    IsEnabled="{x:Bind helpers:ObjectHelper.IsNotEqual(Note.BackdropKind, manm:BackdropKind.None), Mode=OneWay}"
-                                                    Command="{x:Bind EditorViewModel.ChangeBackdropLuminosityOpacityToDefaultCommand}" />
-                      </Grid>
+                          <templates:TextContentControl Grid.Row="1"
+                                                        Grid.Column="0"
+                                                        VerticalAlignment="Center"
+                                                        HorizontalContentAlignment="Center"
+                                                        Width="32"
+                                                        Text="{x:Bind helpers:NumericHelper.Round(Note.BackdropLuminosityOpacity, 2), Mode=OneWay}" />
+                          <Slider Grid.Row="1"
+                                  Grid.Column="1"
+                                  VerticalAlignment="Center"
+                                  Minimum="0"
+                                  Maximum="1"
+                                  StepFrequency="0.01"
+                                  IsThumbToolTipEnabled="False"
+                                  Value="{x:Bind Note.BackdropLuminosityOpacity, Mode=TwoWay}" />
+
+                          <templates:SubtleIconButton Grid.Row="1"
+                                                      Grid.Column="2"
+                                                      Content="{ctw:FontIcon Glyph=&#xE72C;}"
+                                                      Style="{StaticResource SubtleIconButtonStyle_32x16}"
+                                                      Command="{x:Bind EditorViewModel.ChangeBackdropLuminosityOpacityToDefaultCommand}" />
+                        </Grid>
+                      </ContentControl>
                     </StackPanel>
                   </ctwc:Case>
 
@@ -1152,7 +1162,7 @@
     <InfoBar x:Name="NotePage_InfoBar"
              Grid.Row="2"
              IsOpen="False"
-             Background="{ThemeResource ControlFillColorDefault}"
+             Background="{ThemeResource ControlFillColorDefaultBrush}"
              HorizontalAlignment="Center"
              VerticalAlignment="Bottom"
              Margin="12,4" />
@@ -1163,7 +1173,15 @@
         <VisualState x:Name="FlyoutThemeDefault" />
         <VisualState x:Name="FlyoutThemeLight">
           <VisualState.Setters>
-            <Setter Target="NotePage_BackgroundFlyout.FlyoutPresenterStyle"
+            <Setter Target="NotePage_BulletsAndNumberingButtonFlyout.FlyoutPresenterStyle"
+                    Value="{StaticResource LightThemeFlyoutPresenterStyle}" />
+            <Setter Target="NotePage_FontSizeButtonFlyout.FlyoutPresenterStyle"
+                    Value="{StaticResource LightThemeFlyoutPresenterStyle}" />
+            <Setter Target="NotePage_FontColorButtonFlyout.FlyoutPresenterStyle"
+                    Value="{StaticResource LightThemeFlyoutPresenterStyle}" />
+            <Setter Target="NotePage_HighlightColorButtonFlyout.FlyoutPresenterStyle"
+                    Value="{StaticResource LightThemeFlyoutPresenterStyle}" />
+            <Setter Target="NotePage_BackgroundButtonFlyout.FlyoutPresenterStyle"
                     Value="{StaticResource LightThemeFlyoutPresenterStyle}" />
             <Setter Target="NotePage_MoreButtonMenuFlyout.MenuFlyoutPresenterStyle"
                     Value="{StaticResource LightThemeMenuFlyoutPresenterStyle}" />
@@ -1175,7 +1193,15 @@
         </VisualState>
         <VisualState x:Name="FlyoutThemeDark">
           <VisualState.Setters>
-            <Setter Target="NotePage_BackgroundFlyout.FlyoutPresenterStyle"
+            <Setter Target="NotePage_BulletsAndNumberingButtonFlyout.FlyoutPresenterStyle"
+                    Value="{StaticResource DarkThemeFlyoutPresenterStyle}" />
+            <Setter Target="NotePage_FontSizeButtonFlyout.FlyoutPresenterStyle"
+                    Value="{StaticResource DarkThemeFlyoutPresenterStyle}" />
+            <Setter Target="NotePage_FontColorButtonFlyout.FlyoutPresenterStyle"
+                    Value="{StaticResource DarkThemeFlyoutPresenterStyle}" />
+            <Setter Target="NotePage_HighlightColorButtonFlyout.FlyoutPresenterStyle"
+                    Value="{StaticResource DarkThemeFlyoutPresenterStyle}" />
+            <Setter Target="NotePage_BackgroundButtonFlyout.FlyoutPresenterStyle"
                     Value="{StaticResource DarkThemeFlyoutPresenterStyle}" />
             <Setter Target="NotePage_MoreButtonMenuFlyout.MenuFlyoutPresenterStyle"
                     Value="{StaticResource DarkThemeMenuFlyoutPresenterStyle}" />
