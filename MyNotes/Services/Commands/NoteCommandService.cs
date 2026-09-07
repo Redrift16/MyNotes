@@ -115,7 +115,7 @@ internal sealed class NoteCommandService
       if (navigationLease?.ViewModel is UserListNavigationViewModel navigationViewModel)
       {
         var size = AppSettingsService.Load(SizeInt32SettingsCodec.Default, AppSettingsDescriptors.DefaultNoteSize);
-        var position = MainWindowService.GetNewWindowPosition(size) ?? AppSettingsDescriptors.DefaultNoteWindowPosition.PointInt32;
+        var position = MainWindowService.GetNewWindowPosition(size) ?? AppSettingsDescriptors.DefaultNoteWindowPosition;
 
         CreateNoteAppCommand appCommand = new()
         {

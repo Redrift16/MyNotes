@@ -79,20 +79,17 @@ internal static class AppSettingsDescriptors
     Key = "IsMainWindowOpen",
     DefaultValue = true
   };
-  public static SettingsDescriptor<Size> MainWindowMinimumSize { get; } = new()
-  {
-    Key = "MainWindowMinimumSize",
-    DefaultValue = new(600.0, 600.0)
-  };
-  public static SettingsDescriptor<Size> MainWindowSize { get; } = new()
+  public static SizeInt32 MainWindowMinimumSize { get; } = new(600, 600);
+
+  public static SettingsDescriptor<SizeInt32> MainWindowSize { get; } = new()
   {
     Key = "MainWindowSize",
-    DefaultValue = new(600.0, 800.0)
+    DefaultValue = new(600, 800)
   };
-  public static SettingsDescriptor<Point> MainWindowPosition { get; } = new()
+  public static SettingsDescriptor<PointInt32> MainWindowPosition { get; } = new()
   {
     Key = "MainWindowPosition",
-    DefaultValue = new(0.0, 0.0)
+    DefaultValue = new(40, 40)
   };
   public static SettingsDescriptor<string> MainWindowDisplay { get; } = new()
   {
@@ -112,14 +109,14 @@ internal static class AppSettingsDescriptors
   };
 
   // Settings - Note
-  public static Size NoteWindowMinimumSize { get; } = new(400.0, 300.0);
+  public static SizeInt32 NoteWindowMinimumSize { get; } = new(400, 300);
   public static SettingsDescriptor<int> NoteBodyUpdateFrequency { get; } = new()
   {
     Key = "NoteBodyUpdateFrequency",
     DefaultValue = 2
   };
 
-  public static Point DefaultNoteWindowPosition { get; } = new(32.0, 32.0);
+  public static PointInt32 DefaultNoteWindowPosition { get; } = new(32, 32);
 
-  public static Size ImageViewerWindowMinimumSize { get; } = new(600.0, 600.0);
+  public static SizeInt32 ImageViewerWindowMinimumSize { get; } = new(600, 600);
 }

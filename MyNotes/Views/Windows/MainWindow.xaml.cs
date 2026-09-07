@@ -5,6 +5,7 @@ using MyNotes.Common.Converters.Codecs;
 using MyNotes.Common.Helpers;
 using MyNotes.Common.Interop;
 using MyNotes.Constants;
+using MyNotes.Debugging;
 using MyNotes.Domain.Navigations;
 using MyNotes.Strings;
 using MyNotes.Views.Navigations;
@@ -22,7 +23,6 @@ internal sealed partial class MainWindow : Window
 
   private readonly TaskCompletionSource LoadTCS = new();
   public Task LoadTask => LoadTCS.Task;
-  public event EventHandler? Loaded;
 
   #region Object Lifetime Management
   public MainWindow(NavigationId? _initialNavigationId = null)
@@ -42,7 +42,7 @@ internal sealed partial class MainWindow : Window
     double scaleFactor = NativeMethods.GetWindowScaleFactor(_hWnd);
 
     // 창 최소 크기 지정
-    var minimumWindowSize = AppSettingsDescriptors.MainWindowMinimumSize.DefaultValue;
+    var minimumWindowSize = AppSettingsDescriptors.MainWindowMinimumSize;
     var presenter = AppWindow.Presenter as OverlappedPresenter;
     presenter?.PreferredMinimumWidth = (int)(minimumWindowSize.Width * scaleFactor);
     presenter?.PreferredMinimumHeight = (int)(minimumWindowSize.Height * scaleFactor);
@@ -52,7 +52,6 @@ internal sealed partial class MainWindow : Window
 
     // 창 활성화 및 크기 변경 시
     this.Activated += MainWindow_Activated;
-    //AppWindow.Changed += AppWindow_Changed;
 
     // 창 종료 시 (AppWindow는 hWnd 기준, Window는 XAML 기준)
     // ├─ AppWindow.Closing          // 취소 가능, UI 상태 신뢰 가능
@@ -63,17 +62,16 @@ internal sealed partial class MainWindow : Window
     this.Closed += MainWindow_Closed;
 
     // 창 초기 크기 지정
-    var windowSize = AppSettingsService.Load(AppSettingsDescriptors.MainWindowSize);
+    var windowSize = AppSettingsService.Load(SizeInt32SettingsCodec.Default, AppSettingsDescriptors.MainWindowSize);
     if (windowSize.Width < minimumWindowSize.Width && windowSize.Height < minimumWindowSize.Height)
     {
       windowSize = AppSettingsDescriptors.MainWindowSize.DefaultValue;
     }
 
-    _windowSize = windowSize.SizeInt32;
-    AppWindow.Resize(new((int)(_windowSize.Width * scaleFactor), (int)(_windowSize.Height * scaleFactor)));
+    AppWindow.Resize(new((int)(windowSize.Width * scaleFactor), (int)(windowSize.Height * scaleFactor)));
 
     // 창 초기 위치 지정
-    var windowPosition = AppSettingsService.Load(AppSettingsDescriptors.MainWindowPosition);
+    var windowPosition = AppSettingsService.Load(PointInt32SettingsCodec.Default, AppSettingsDescriptors.MainWindowPosition);
     List<RectInt32> areas = new();
     foreach (var monitor in NativeMethods.GetActiveMonitorsInfo())
     {
@@ -85,13 +83,13 @@ internal sealed partial class MainWindow : Window
         Height = monitor.rcWork.Bottom,
       });
     }
-    _windowPosition = windowPosition.PointInt32;
 
-    if (ContainsPointInAreas(areas, _windowPosition))
+    if (ContainsPointInAreas(areas, windowPosition))
     {
-      AppWindow.Move(_windowPosition);
+      AppWindow.Move(windowPosition);
     }
 
+    _appWindowUpdateTimer.Tick += AppWindowUpdateTimer_Tick;
     AppWindow.Changed += AppWindow_Changed;
 
     // 제목 표시줄 테마 설정
@@ -110,20 +108,11 @@ internal sealed partial class MainWindow : Window
     this.Content = contentPage;
     this.SetTitleBar(contentPage.TitleBarElement);
 
-    Loaded?.Invoke(this, EventArgs.Empty);
     LoadTCS.TrySetResult();
   }
 
   private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
   {
-    // 창 크기 저장
-    double scaleFactor = NativeMethods.GetWindowScaleFactor(_hWnd);
-    AppSettingsService.Save(AppSettingsDescriptors.MainWindowSize, new Size(_windowSize.Width / scaleFactor, _windowSize.Height / scaleFactor));
-
-    // 창 위치 및 디스플레이 저장
-    AppSettingsService.Save(AppSettingsDescriptors.MainWindowPosition, new Point(_windowPosition.X, _windowPosition.Y));
-    AppSettingsService.Save(AppSettingsDescriptors.MainWindowDisplay, NativeMethods.GetMonitorInfoForWindow(_hWnd)?.szDevice ?? string.Empty);
-
     // MainWindow 종료 플래그
     AppSettingsService.Save(AppSettingsDescriptors.IsMainWindowOpen, false);
   }
@@ -133,6 +122,7 @@ internal sealed partial class MainWindow : Window
   private void MainWindow_Closed(object sender, WindowEventArgs args)
   {
     IsClosed = true;
+    _appWindowUpdateTimer.Tick -= AppWindowUpdateTimer_Tick;
     AppWindow.Changed -= AppWindow_Changed;
     this.Activated -= MainWindow_Activated;
     AppWindow.Closing -= AppWindow_Closing;
@@ -142,26 +132,33 @@ internal sealed partial class MainWindow : Window
 
   public void SetNavigation(NavigationId? navigationId) => (this.Content as MainPage)?.SetNavigation(navigationId);
 
-  private SizeInt32 _windowSize;
-  private PointInt32 _windowPosition;
+  #region 크기(dpi-awareness) 및 위치(per-monitor)
+  private readonly DispatcherTimer _appWindowUpdateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
   private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
   {
-    if (args.DidSizeChange)
+    if (args.DidSizeChange || args.DidPositionChange)
     {
       if (AppWindow.Presenter is OverlappedPresenter presenter
         && presenter.State is OverlappedPresenterState.Restored)
       {
-        _windowSize = AppWindow.Size;
+        _appWindowUpdateTimer.Start();
       }
     }
-    else if (args.DidPositionChange)
-    {
-      if (AppWindow.Presenter is OverlappedPresenter presenter
-        && presenter.State is OverlappedPresenterState.Restored)
-      {
-        _windowPosition = AppWindow.Position;
-      }
-    }
+  }
+
+  private void AppWindowUpdateTimer_Tick(object? sender, object e)
+  {
+    _appWindowUpdateTimer.Stop();
+    var _windowSize = AppWindow.Size;
+    var _windowPosition = AppWindow.Position;
+
+    // 창 크기 저장
+    double scaleFactor = NativeMethods.GetWindowScaleFactor(_hWnd);
+    AppSettingsService.Save(SizeInt32SettingsCodec.Default, AppSettingsDescriptors.MainWindowSize, new SizeInt32((int)(_windowSize.Width / scaleFactor), (int)(_windowSize.Height / scaleFactor)));
+
+    // 창 위치 및 디스플레이 저장
+    AppSettingsService.Save(PointInt32SettingsCodec.Default, AppSettingsDescriptors.MainWindowPosition, _windowPosition);
+    AppSettingsService.Save(AppSettingsDescriptors.MainWindowDisplay, NativeMethods.GetMonitorInfoForWindow(_hWnd)?.szDevice ?? string.Empty);
   }
 
   public static bool ContainsPointInAreas(List<RectInt32> areas, PointInt32 point)
@@ -176,6 +173,7 @@ internal sealed partial class MainWindow : Window
 
     return false;
   }
+  #endregion
 
   private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
   {

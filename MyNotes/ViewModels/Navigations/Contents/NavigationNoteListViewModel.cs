@@ -184,7 +184,7 @@ internal sealed partial class NavigationNoteListViewModel : AsyncViewModelBase
         if (Navigation is NavigationUserLeafNode leafNavigation)
         {
           var size = AppSettingsService.Load(SizeInt32SettingsCodec.Default, AppSettingsDescriptors.DefaultNoteSize);
-          var position = MainWindowService.GetNewWindowPosition(size) ?? AppSettingsDescriptors.DefaultNoteWindowPosition.PointInt32;
+          var position = MainWindowService.GetNewWindowPosition(size) ?? AppSettingsDescriptors.DefaultNoteWindowPosition;
           CreateNoteAppCommand createNoteAppCommand = new()
           {
             NavigationId = leafNavigation.Id,
