@@ -34,10 +34,6 @@ internal partial class NotePreviewViewModel : AsyncViewModelBase
 
   protected override async ValueTask DisposeAsyncCore()
   {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
     UnregisterMessengers();
     await NoteViewModelLease.DisposeAsync();
   }

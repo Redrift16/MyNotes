@@ -39,18 +39,14 @@ internal sealed class NoteEditorViewModelProvider(IServiceScopeFactory ScopeFact
     public required Func<Task> ReleaseFunc { get; init; }
 
     private bool _disposeStarted;
-    private async ValueTask DisposeAsyncCore()
+    private async ValueTask DisposeAsyncCore() => await ReleaseFunc.Invoke();
+
+    public async ValueTask DisposeAsync()
     {
       if (Interlocked.Exchange(ref _disposeStarted, true))
       {
         return;
       }
-
-      await ReleaseFunc.Invoke();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
       await DisposeAsyncCore().ConfigureAwait(false);
       GC.SuppressFinalize(this);
     }

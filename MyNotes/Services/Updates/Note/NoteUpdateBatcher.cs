@@ -160,11 +160,6 @@ internal sealed class NoteUpdateBatcher : IUpdateBatcher<string, NotePatchDto, U
 
   private async ValueTask DisposeAsyncCore()
   {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
-
     ITimer? batchTimer;
 
     await _pendingSemaphore.WaitAsync();
@@ -203,6 +198,10 @@ internal sealed class NoteUpdateBatcher : IUpdateBatcher<string, NotePatchDto, U
 
   public async ValueTask DisposeAsync()
   {
+    if (Interlocked.Exchange(ref _disposeStarted, true))
+    {
+      return;
+    }
     await DisposeAsyncCore().ConfigureAwait(false);
     GC.SuppressFinalize(this);
   }

@@ -95,11 +95,6 @@ public sealed partial class App : Microsoft.UI.Xaml.Application, IAsyncDisposabl
 
   private async ValueTask DisposeAsyncCore()
   {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
-
     this.UnhandledException -= App_UnhandledException;
     AppDomain.CurrentDomain.UnhandledException -= CurrentDomain_UnhandledException;
     TaskScheduler.UnobservedTaskException -= TaskScheduler_UnobservedTaskException;
@@ -109,6 +104,11 @@ public sealed partial class App : Microsoft.UI.Xaml.Application, IAsyncDisposabl
 
   public async ValueTask DisposeAsync()
   {
+    if (Interlocked.Exchange(ref _disposeStarted, true))
+    {
+      return;
+    }
+
     await DisposeAsyncCore().ConfigureAwait(false);
     GC.SuppressFinalize(this);
   }

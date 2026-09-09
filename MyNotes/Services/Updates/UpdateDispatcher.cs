@@ -31,17 +31,16 @@ internal sealed class UpdateDispatcher<TPatch> : IUpdateDispatcher<TPatch> where
 
   public async ValueTask DisposeAsync()
   {
+    if (Interlocked.Exchange(ref _disposeStarted, true))
+    {
+      return;
+    }
     await DisposeAsyncCore().ConfigureAwait(false);
     GC.SuppressFinalize(this);
   }
 
   private async ValueTask DisposeAsyncCore()
   {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
-
     var completed = DispatcherChannel.Writer.TryComplete();
     ConsoleHelper.WriteLine(true, "{0}: {1}", "Dispatcher Disposing & completed", completed);
     await _workerTask;
@@ -56,15 +55,10 @@ internal sealed class UpdateDispatcher<TPatch, TResult>(IUpdateHandler<TPatch, T
 
   public async ValueTask DisposeAsync()
   {
-    await DisposeAsyncCore().ConfigureAwait(false);
-    GC.SuppressFinalize(this);
-  }
-
-  private async ValueTask DisposeAsyncCore()
-  {
     if (Interlocked.Exchange(ref _disposeStarted, true))
     {
       return;
     }
+    GC.SuppressFinalize(this);
   }
 }

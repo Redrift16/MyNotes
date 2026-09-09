@@ -49,11 +49,6 @@ internal sealed partial class ImageCollectionViewModel : AsyncViewModelBase
 
   protected override async ValueTask DisposeAsyncCore()
   {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
-
     _imageViewModelLeases?.Dispose();
   }
   #endregion

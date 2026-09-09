@@ -5,7 +5,7 @@ using MyNotes.Models.UI;
 
 namespace MyNotes.Constants;
 
-internal static class AppSettingsDescriptors
+internal static partial class AppSettingsDescriptors
 {
   // Settings - Appearance
   public static SettingsDescriptor<ElementTheme> AppTheme { get; } = new()
@@ -79,6 +79,13 @@ internal static class AppSettingsDescriptors
     Key = "IsMainWindowOpen",
     DefaultValue = true
   };
+
+  public static SettingsDescriptor<bool> IsMainNavigationPaneOpen { get; } = new()
+  {
+    Key = "IsMainNavigationPaneOpen",
+    DefaultValue = true
+  };
+
   public static SizeInt32 MainWindowMinimumSize { get; } = new(600, 600);
 
   public static SettingsDescriptor<SizeInt32> MainWindowSize { get; } = new()

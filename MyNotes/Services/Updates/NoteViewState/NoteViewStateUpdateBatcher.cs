@@ -58,12 +58,6 @@ internal sealed class NoteViewStateUpdateBatcher : IUpdateBatcher<string, NoteVi
 
   private async ValueTask DisposeAsyncCore()
   {
-    ConsoleHelper.WriteLine(true, "{0}: {1}", "NoteViewStateUpdateBatcher Disposed", true);
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
-
     if (_batchTimer is not null)
     {
       await _batchTimer.DisposeAsync();
@@ -73,6 +67,10 @@ internal sealed class NoteViewStateUpdateBatcher : IUpdateBatcher<string, NoteVi
 
   public async ValueTask DisposeAsync()
   {
+    if (Interlocked.Exchange(ref _disposeStarted, true))
+    {
+      return;
+    }
     await DisposeAsyncCore().ConfigureAwait(false);
     GC.SuppressFinalize(this);
   }

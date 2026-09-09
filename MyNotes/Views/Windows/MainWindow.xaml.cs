@@ -2,10 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 using MyNotes.Application.Settings.Services;
 using MyNotes.Common.Converters.Codecs;
-using MyNotes.Common.Helpers;
 using MyNotes.Common.Interop;
 using MyNotes.Constants;
-using MyNotes.Debugging;
 using MyNotes.Domain.Navigations;
 using MyNotes.Strings;
 using MyNotes.Views.Navigations;
@@ -89,7 +87,7 @@ internal sealed partial class MainWindow : Window
       AppWindow.Move(windowPosition);
     }
 
-    _appWindowUpdateTimer.Tick += AppWindowUpdateTimer_Tick;
+    _appWindowSizePotionUpdateTimer.Tick += AppWindowSizePositionUpdateTimer_Tick;
     AppWindow.Changed += AppWindow_Changed;
 
     // 제목 표시줄 테마 설정
@@ -122,7 +120,12 @@ internal sealed partial class MainWindow : Window
   private void MainWindow_Closed(object sender, WindowEventArgs args)
   {
     IsClosed = true;
-    _appWindowUpdateTimer.Tick -= AppWindowUpdateTimer_Tick;
+    _appWindowSizePotionUpdateTimer.Tick -= AppWindowSizePositionUpdateTimer_Tick;
+    if (AllowAppWindowSizePositionUpdate)
+    {
+      UpdateWindowSizeAndPosition();
+    }
+
     AppWindow.Changed -= AppWindow_Changed;
     this.Activated -= MainWindow_Activated;
     AppWindow.Closing -= AppWindow_Closing;
@@ -133,31 +136,37 @@ internal sealed partial class MainWindow : Window
   public void SetNavigation(NavigationId? navigationId) => (this.Content as MainPage)?.SetNavigation(navigationId);
 
   #region 크기(dpi-awareness) 및 위치(per-monitor)
-  private readonly DispatcherTimer _appWindowUpdateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+  private readonly DispatcherTimer _appWindowSizePotionUpdateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+  private bool AllowAppWindowSizePositionUpdate => AppWindow.Presenter is OverlappedPresenter presenter && presenter.State is OverlappedPresenterState.Restored && !NativeMethods.IsWindowArranged(_hWnd);
   private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
   {
     if (args.DidSizeChange || args.DidPositionChange)
     {
-      if (AppWindow.Presenter is OverlappedPresenter presenter
-        && presenter.State is OverlappedPresenterState.Restored)
+      if (AllowAppWindowSizePositionUpdate)
       {
-        _appWindowUpdateTimer.Start();
+        _appWindowSizePotionUpdateTimer.Start();
+      }
+      else
+      {
+        _appWindowSizePotionUpdateTimer.Stop();
       }
     }
   }
 
-  private void AppWindowUpdateTimer_Tick(object? sender, object e)
+  private void AppWindowSizePositionUpdateTimer_Tick(object? sender, object e) => UpdateWindowSizeAndPosition();
+
+  private void UpdateWindowSizeAndPosition()
   {
-    _appWindowUpdateTimer.Stop();
-    var _windowSize = AppWindow.Size;
-    var _windowPosition = AppWindow.Position;
+    _appWindowSizePotionUpdateTimer.Stop();
+    var windowSize = AppWindow.Size;
+    var windowPosition = AppWindow.Position;
 
     // 창 크기 저장
     double scaleFactor = NativeMethods.GetWindowScaleFactor(_hWnd);
-    AppSettingsService.Save(SizeInt32SettingsCodec.Default, AppSettingsDescriptors.MainWindowSize, new SizeInt32((int)(_windowSize.Width / scaleFactor), (int)(_windowSize.Height / scaleFactor)));
+    AppSettingsService.Save(SizeInt32SettingsCodec.Default, AppSettingsDescriptors.MainWindowSize, new SizeInt32((int)(windowSize.Width / scaleFactor), (int)(windowSize.Height / scaleFactor)));
 
     // 창 위치 및 디스플레이 저장
-    AppSettingsService.Save(PointInt32SettingsCodec.Default, AppSettingsDescriptors.MainWindowPosition, _windowPosition);
+    AppSettingsService.Save(PointInt32SettingsCodec.Default, AppSettingsDescriptors.MainWindowPosition, windowPosition);
     AppSettingsService.Save(AppSettingsDescriptors.MainWindowDisplay, NativeMethods.GetMonitorInfoForWindow(_hWnd)?.szDevice ?? string.Empty);
   }
 

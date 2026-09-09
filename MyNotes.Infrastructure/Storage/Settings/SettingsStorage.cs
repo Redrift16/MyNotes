@@ -34,7 +34,6 @@ internal sealed class SettingsStorage : ISettingsStorage
   /// </remarks>
   public bool IsValid(object value)
   {
-    ConsoleHelper.WriteLine(true, "{0}: {1}", "Settings Type", value.GetType());
     return value switch
     {
       byte or short or ushort or int or uint or long or ulong or float or double or
@@ -59,20 +58,24 @@ internal sealed class SettingsStorage : ISettingsStorage
     {
       return;
     }
-    _settingsSet.TryGetValue(settingsKey, out var oldSettingsValue);
+    ConsoleHelper.WriteLine(true, "{0} ({1}): {2} ({3})", "Settings Saved", settingsKey, settingsValue, settingsValue.GetType().Name);
+    if (_settingsSet.TryGetValue(settingsKey, out var oldSettingsValue) && settingsValue.Equals(oldSettingsValue))
+    {
+      return;
+    }
     _settingsSet[settingsKey] = settingsValue;
   }
 
   public bool TryLoad<T>(string settingsKey, [NotNullWhen(true)] out T? settingsValue) where T : notnull
   {
-    if(_settingsSet.TryGetValue(settingsKey, out var value) && value is T TValue)
+    if (_settingsSet.TryGetValue(settingsKey, out var value) && value is T TValue)
     {
       settingsValue = TValue;
       return true;
     }
 
     settingsValue = default;
-    return false; 
+    return false;
   }
 
   public void SaveToComposite<T>(string settingsKey, KeyValuePair<string, T> pair) where T : notnull

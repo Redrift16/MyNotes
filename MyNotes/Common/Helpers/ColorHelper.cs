@@ -1,4 +1,6 @@
-﻿namespace MyNotes.Common.Helpers;
+﻿using MyNotes.Application.Contracts.Notes.Models;
+
+namespace MyNotes.Common.Helpers;
 
 internal static class ColorHelper
 {
@@ -6,6 +8,9 @@ internal static class ColorHelper
   public static AcrylicBrush ToAcrylicBrush(Color c, double tintOpacity = 1.0, double tintLuminosityOpacity = 1.0) => new() { FallbackColor = c, TintColor = c, TintOpacity = tintOpacity, TintLuminosityOpacity = tintLuminosityOpacity };
 
   public static SolidColorBrush ToAcrylicSolidBrush(bool enable, Color tintColor, double tintOpacity, double tintLuminosityOpacity, Color backgroundColor) => enable ? AcrylicSolidColorConverter.Create(tintColor, tintOpacity, tintLuminosityOpacity, Colors.White) : new(tintColor);
+
+  private static readonly SolidColorBrush _transparentBrush = new(Colors.Transparent);
+  public static SolidColorBrush GetBackgroundBrushForBackdrop(BackdropKind backdropKind, Color color) => backdropKind is BackdropKind.None ? new(color) : _transparentBrush;
 
   public const double WCAG_AA_Normal = 4.5;
   public const double WCAG_AA_Large = 3.0;

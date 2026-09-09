@@ -120,18 +120,14 @@ internal sealed class NavigationNoteListViewModelProvider(IServiceProvider servi
     public required Func<Task> ReleaseFunc { get; init; }
 
     private bool _disposeStarted;
-    private async ValueTask DisposeAsyncCore()
+    private async ValueTask DisposeAsyncCore() => await ReleaseFunc();
+
+    public async ValueTask DisposeAsync()
     {
       if (Interlocked.Exchange(ref _disposeStarted, true))
       {
         return;
       }
-
-      await ReleaseFunc();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
       await DisposeAsyncCore().ConfigureAwait(false);
       GC.SuppressFinalize(this);
     }

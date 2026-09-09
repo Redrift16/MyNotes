@@ -5,7 +5,6 @@ using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Windows.Storage.Pickers;
 
-using MyNotes.Application.Contracts.Notes.Models;
 using MyNotes.Application.Settings.Services;
 using MyNotes.Common.Converters.Codecs;
 using MyNotes.Common.Helpers;
@@ -37,8 +36,8 @@ namespace MyNotes.Views.Notes;
 internal sealed partial class NotePage : Page, ITitleBarProvider, IAsyncDisposable
 {
   // ViewModel Lease
-  private IAsyncViewModelLease<NoteEditorViewModel> EditorViewModelLease;
-  private IAsyncViewModelLease<ImageCollectionViewModel> ImageCollectionViewModelLease;
+  private readonly IAsyncViewModelLease<NoteEditorViewModel> EditorViewModelLease;
+  private readonly IAsyncViewModelLease<ImageCollectionViewModel> ImageCollectionViewModelLease;
 
   // ViewModel
   private NoteEditorViewModel EditorViewModel => EditorViewModelLease.ViewModel;
@@ -77,42 +76,10 @@ internal sealed partial class NotePage : Page, ITitleBarProvider, IAsyncDisposab
     RegisterMessengers();
 
     _infoBarDismissTimer.Tick += InfoBarDismissTimer_Tick;
+    _appWindowSizePotionUpdateTimer.Tick += AppWindowSizePotionUpdateTimer_Tick;
 
-    this.SizeChanged += NotePage_SizeChanged;
     this.Loaded += NotePage_Loaded;
     this.Unloaded += NotePage_Unloaded;
-  }
-
-  private bool _disposeStarted;
-  public async ValueTask DisposeAsync()
-  {
-    await DisposeAsyncCore();
-    GC.SuppressFinalize(this);
-  }
-
-  public async ValueTask DisposeAsyncCore()
-  {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
-
-    Bindings.StopTracking();
-
-    _infoBarDismissTimer.Tick -= InfoBarDismissTimer_Tick;
-
-    UnregisterMessengers();
-
-    // 에디터 내용을 저장 후 정리
-    if (EditorViewModelLease is not null)
-    {
-      await EditorViewModelLease.DisposeAsync();
-    }
-
-    if (ImageCollectionViewModelLease is not null)
-    {
-      await ImageCollectionViewModelLease.DisposeAsync();
-    }
   }
 
   private async void NotePage_Loaded(object sender, RoutedEventArgs e)
@@ -179,6 +146,11 @@ internal sealed partial class NotePage : Page, ITitleBarProvider, IAsyncDisposab
   {
     sender.Changed -= AppWindow_Changed;
     sender.Closing -= AppWindow_Closing;
+    _appWindowSizePotionUpdateTimer.Tick -= AppWindowSizePotionUpdateTimer_Tick;
+    if (AllowAppWindowSizePositionUpdate(sender))
+    {
+      UpdateWindowSizeAndPosition();
+    }
 
     if (_isManualClose)
     {
@@ -192,54 +164,40 @@ internal sealed partial class NotePage : Page, ITitleBarProvider, IAsyncDisposab
       _ = NativeMethods.SetWindowLongPtr(hWnd, GWLP_WNDPROC, _oldWndProc);
     }
     _newWndProcCallback = null;
+
+  }
+
+  private bool _disposeStarted;
+  public async ValueTask DisposeAsync()
+  {
+    if (Interlocked.Exchange(ref _disposeStarted, true))
+    {
+      return;
+    }
+    await DisposeAsyncCore();
+    GC.SuppressFinalize(this);
+  }
+
+  public async ValueTask DisposeAsyncCore()
+  {
+    Bindings.StopTracking();
+
+    _infoBarDismissTimer.Tick -= InfoBarDismissTimer_Tick;
+
+    UnregisterMessengers();
+
+    // 에디터 내용을 저장 후 정리
+    if (EditorViewModelLease is not null)
+    {
+      await EditorViewModelLease.DisposeAsync();
+    }
+
+    if (ImageCollectionViewModelLease is not null)
+    {
+      await ImageCollectionViewModelLease.DisposeAsync();
+    }
   }
   #endregion
-
-  int _sourceIndex = -1;
-  private void NotePage_ImagesGridView_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
-  {
-    if (e.Items.FirstOrDefault() is ImageViewModel sourceItem)
-    {
-      _sourceIndex = NotePage_ImagesGridView.Items.IndexOf(sourceItem);
-    }
-  }
-
-  private async void NotePage_ImagesGridView_Drop(object sender, DragEventArgs e)
-  {
-    var pointerPosition = e.GetPosition(NotePage_ImagesGridView);
-    int dropIndex = -1;
-    int count = NotePage_ImagesGridView.Items.Count;
-    for (int index = 0; index < count; index++)
-    {
-      if (NotePage_ImagesGridView.ContainerFromIndex(index) is not GridViewItem container)
-      {
-        continue;
-      }
-
-      var containerBounds = container.TransformToVisual(NotePage_ImagesGridView).TransformBounds(new Rect(0, 0, container.ActualWidth, container.ActualHeight));
-
-      if (containerBounds.Contains(pointerPosition))
-      {
-        dropIndex = index;
-        break;
-      }
-    }
-
-    if (_sourceIndex != dropIndex && _sourceIndex >= 0 && _sourceIndex < count && dropIndex >= 0 && dropIndex < count)
-    {
-      if (ImageCollectionViewModel is not null)
-      {
-        await ImageCollectionViewModel.MoveImageAsync(_sourceIndex, dropIndex);
-      }
-    }
-
-    _sourceIndex = -1;
-  }
-
-  private void NotePage_ImagesGridView_DragOver(object sender, DragEventArgs e)
-  {
-    e.AcceptedOperation = DataPackageOperation.Move;
-  }
 }
 
 partial class NotePage
@@ -286,42 +244,164 @@ partial class NotePage
     }
   }
 
-  private void NotePage_SizeChanged(object sender, SizeChangedEventArgs e)
-  {
-    if (FocusManager.GetFocusedElement(this.XamlRoot) is FrameworkElement focusedElement
-      && focusedElement == NotePage_TextEditorRichEditBox)
-    {
-      NotePage_TitleBarGrid.Focus(FocusState.Programmatic);
-    }
-    NoteViewModel.ImagePanelMaxHeight = Math.Min(this.ActualHeight * 0.5, 512 * this.XamlRoot.RasterizationScale);
-  }
-
   private IntPtr _oldWndProc = IntPtr.Zero;
   private IntPtr _newWndProc = IntPtr.Zero;
   private NativeMethods.WndProcCallback? _newWndProcCallback;
   private readonly int GWLP_WNDPROC = -4;
   private bool _isManualClose = true;
 
+  private readonly DispatcherTimer _appWindowSizePotionUpdateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+  private static bool AllowAppWindowSizePositionUpdate(AppWindow appWindow) => appWindow.Presenter is OverlappedPresenter presenter && presenter.State is OverlappedPresenterState.Restored && !NativeMethods.IsWindowArranged(Win32Interop.GetWindowFromWindowId(appWindow.Id));
   private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
   {
+
+    if (args.DidSizeChange || args.DidPositionChange)
+    {
+      if (AllowAppWindowSizePositionUpdate(sender))
+      {
+        _appWindowSizePotionUpdateTimer.Start();
+      }
+      else
+      {
+        _appWindowSizePotionUpdateTimer.Stop();
+      }
+    }
+
     if (args.DidSizeChange)
     {
-      if (sender.Presenter is OverlappedPresenter presenter
-        && presenter.State is OverlappedPresenterState.Restored)
+      if (AllowAppWindowSizePositionUpdate(sender))
       {
         Note.Size = sender.Size;
       }
-    }
-    else if (args.DidPositionChange)
-    {
-      if (sender.Presenter is OverlappedPresenter presenter
-        && presenter.State is OverlappedPresenterState.Restored)
+
+      if (FocusManager.GetFocusedElement(this.XamlRoot) is FrameworkElement focusedElement
+        && focusedElement == NotePage_TextEditorRichEditBox)
       {
-        Note.Position = sender.Position;
+        NotePage_TitleBarGrid.Focus(FocusState.Programmatic);
       }
+      NoteViewModel.ImagePanelMaxHeight = Math.Min(this.ActualHeight * 0.5, 512 * this.XamlRoot.RasterizationScale);
     }
   }
 
+  private void AppWindowSizePotionUpdateTimer_Tick(object? sender, object e) => UpdateWindowSizeAndPosition();
+
+  private void UpdateWindowSizeAndPosition()
+  {
+    _appWindowSizePotionUpdateTimer.Stop();
+
+    var appWindow = AppWindow.GetFromWindowId(this.XamlRoot.ContentIslandEnvironment.AppWindowId);
+    Note.Size = appWindow.Size;
+    Note.Position = appWindow.Position;
+  }
+}
+
+partial class NotePage
+{
+  #region 상단 타이틀 바 영역
+  // 타이틀바 드래그 영역 조정(로드 및 크기 변경 시)
+  private void NotePage_TitleBarGrid_Loaded(object sender, RoutedEventArgs e)
+  {
+    SetRegionsForCustomTitleBar();
+  }
+
+  private void NotePage_TitleBarGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+  {
+    SetRegionsForCustomTitleBar();
+  }
+
+  private void NotePage_RenameTitleMenuFlyoutItem_Click(object sender, RoutedEventArgs e)
+  {
+    if (VisualStateManager.GoToState(this, nameof(TitleBarTitleRename), false))
+    {
+      NotePage_TitleRenameTextBox.Focus(FocusState.Keyboard);
+      NotePage_TitleRenameTextBox.SelectAll();
+      NotePage_TitleRenameTextBox.LayoutUpdated += NotePage_TitleRenameTextBox_LayoutUpdated;
+    }
+  }
+
+  private void NotePage_TitleRenameTextBox_LayoutUpdated(object? sender, object e)
+  {
+    NotePage_TitleRenameTextBox.LayoutUpdated -= NotePage_TitleRenameTextBox_LayoutUpdated;
+    SetRegionsForCustomTitleBar();
+  }
+
+  private void NotePage_TitleRenameTextBox_LostFocus(object sender, RoutedEventArgs e)
+  {
+    NoteViewModel.OldTitle = Note.Title;
+
+    if (VisualStateManager.GoToState(this, nameof(TitleBarTitleNormal), false))
+    {
+      NotePage_TitleRenameTextBox.LayoutUpdated += NotePage_TitleRenameTextBox_LayoutUpdated;
+    }
+  }
+  #endregion
+
+  #region 에디터 영역
+  private async void NotePage_TextEditorRichEditBox_Paste(object sender, TextControlPasteEventArgs e)
+  {
+    e.Handled = true;
+    var clipboardDataPackageView = Clipboard.GetContent();
+    var availableFormats = clipboardDataPackageView.AvailableFormats;
+    var selection = NotePage_TextEditorRichEditBox.Document.Selection;
+
+    if (availableFormats.Contains(StandardDataFormats.Rtf))
+    {
+      string rtfText = await clipboardDataPackageView.GetRtfAsync();
+      selection.SetText(TextSetOptions.FormatRtf, rtfText);
+      int position = selection.GetIndex(TextRangeUnit.Character) + rtfText.Length - 1;
+      selection.SetRange(position, position);
+    }
+    else if (availableFormats.Contains(StandardDataFormats.Text))
+    {
+      string plainText = await clipboardDataPackageView.GetTextAsync();
+      selection.SetText(TextSetOptions.None, plainText);
+      int position = selection.GetIndex(TextRangeUnit.Character) + plainText.Length - 1;
+      selection.SetRange(position, position);
+    }
+  }
+  #endregion
+
+  #region InfoBar 영역
+  private readonly DispatcherTimer _infoBarDismissTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+
+  private void OpenInfoBar(TimeSpan? interval = null, bool showCloseButtonOnAutoClose = false, Action? actionAfterAutoClosed = null)
+  {
+    NotePage_InfoBar.IsOpen = true;
+
+    if (interval is null)
+    {
+      NotePage_InfoBar.IsClosable = true;
+    }
+    else
+    {
+      NotePage_InfoBar.IsClosable = showCloseButtonOnAutoClose;
+      _infoBarDismissTimer.Stop();
+      _infoBarDismissTimer.Interval = interval.Value;
+      void InfoBarDismissTimer_Tick_WhenAutoClosed(object? sender, object e)
+      {
+        _infoBarDismissTimer.Tick -= InfoBarDismissTimer_Tick_WhenAutoClosed;
+        actionAfterAutoClosed.Invoke();
+      }
+      if (actionAfterAutoClosed is not null)
+      {
+        _infoBarDismissTimer.Tick += InfoBarDismissTimer_Tick_WhenAutoClosed;
+      }
+
+      _infoBarDismissTimer.Start();
+    }
+  }
+
+  private void InfoBarDismissTimer_Tick(object? sender, object e)
+  {
+    NotePage_InfoBar.IsOpen = false;
+    _infoBarDismissTimer.Stop();
+  }
+  #endregion
+}
+
+#region 컨트롤 및 키보드 단축키 동작 이벤트 핸들러
+partial class NotePage
+{
   private async void NotePage_SaveAsMenuFlyoutItem_Click(object sender, RoutedEventArgs e)
   {
     if (sender is MenuFlyoutItem item && item.XamlRoot.ContentIslandEnvironment.AppWindowId is Microsoft.UI.WindowId appWindowId)
@@ -337,7 +417,7 @@ partial class NotePage
       if (fileType is not null)
       {
         string suggestedFileName = Note.Title;
-        foreach (var ch in System.IO.Path.GetInvalidFileNameChars())
+        foreach (var ch in Path.GetInvalidFileNameChars())
         {
           suggestedFileName = suggestedFileName.Replace(ch, '_');
         }
@@ -391,124 +471,13 @@ partial class NotePage
           {
             actionButton.Click -= SaveAsInfoBarActionButton_Click;
             NotePage_InfoBar.ActionButton = null;
-            var folder = await StorageFolder.GetFolderFromPathAsync(System.IO.Path.GetDirectoryName(savePath));
+            var folder = await StorageFolder.GetFolderFromPathAsync(Path.GetDirectoryName(savePath));
             await Launcher.LaunchFolderAsync(folder);
             NotePage_InfoBar.IsOpen = false;
           }
         }
       }
     }
-  }
-
-  private readonly SolidColorBrush _transparentBrush = new(Colors.Transparent);
-  private SolidColorBrush GetBackgroundBrush(BackdropKind backdropKind, Color color) => backdropKind is BackdropKind.None ? new(color) : _transparentBrush;
-}
-
-partial class NotePage
-{
-  #region 상단 타이틀 바 영역
-  // 타이틀바 드래그 영역 조정(로드 및 크기 변경 시)
-  private void NotePage_TitleBarGrid_Loaded(object sender, RoutedEventArgs e)
-  {
-    SetRegionsForCustomTitleBar();
-  }
-
-  private void NotePage_TitleBarGrid_SizeChanged(object sender, SizeChangedEventArgs e)
-  {
-    SetRegionsForCustomTitleBar();
-  }
-
-  private void NotePage_RenameTitleMenuFlyoutItem_Click(object sender, RoutedEventArgs e)
-  {
-    if (VisualStateManager.GoToState(this, "TitleBarTitleRename", false))
-    {
-      NotePage_TitleRenameTextBox.Focus(FocusState.Keyboard);
-      NotePage_TitleRenameTextBox.SelectAll();
-      NotePage_TitleRenameTextBox.LayoutUpdated += NotePage_TitleRenameTextBox_LayoutUpdated;
-    }
-  }
-
-  private void NotePage_TitleRenameTextBox_LayoutUpdated(object? sender, object e)
-  {
-    NotePage_TitleRenameTextBox.LayoutUpdated -= NotePage_TitleRenameTextBox_LayoutUpdated;
-    SetRegionsForCustomTitleBar();
-  }
-
-  private void NotePage_TitleRenameTextBox_LostFocus(object sender, RoutedEventArgs e)
-  {
-    NoteViewModel.OldTitle = Note.Title;
-
-    if (VisualStateManager.GoToState(this, "TitleBarTitleNormal", false))
-    {
-      NotePage_TitleRenameTextBox.LayoutUpdated += NotePage_TitleRenameTextBox_LayoutUpdated;
-    }
-  }
-  #endregion
-
-  #region 에디터 영역
-  private async void NotePage_TextEditorRichEditBox_Paste(object sender, TextControlPasteEventArgs e)
-  {
-    e.Handled = true;
-    var clipboardDataPackageView = Clipboard.GetContent();
-    var availableFormats = clipboardDataPackageView.AvailableFormats;
-    var selection = NotePage_TextEditorRichEditBox.Document.Selection;
-
-    if (availableFormats.Contains(StandardDataFormats.Rtf))
-    {
-      string rtfText = await clipboardDataPackageView.GetRtfAsync();
-      selection.SetText(TextSetOptions.FormatRtf, rtfText);
-      int position = selection.GetIndex(TextRangeUnit.Character) + rtfText.Length - 1;
-      selection.SetRange(position, position);
-    }
-    else if (availableFormats.Contains(StandardDataFormats.Text))
-    {
-      string plainText = await clipboardDataPackageView.GetTextAsync();
-      selection.SetText(TextSetOptions.None, plainText);
-      int position = selection.GetIndex(TextRangeUnit.Character) + plainText.Length - 1;
-      selection.SetRange(position, position);
-    }
-  }
-  #endregion
-
-  private bool IsBackdropPropertySliderEnabled(BackdropKind backdropKind) => backdropKind is not BackdropKind.None;
-}
-
-#region Keyboard Accelerators
-partial class NotePage
-{
-  private readonly DispatcherTimer _infoBarDismissTimer = new() { Interval = TimeSpan.FromSeconds(2) };
-
-  private void OpenInfoBar(TimeSpan? interval = null, bool showCloseButtonOnAutoClose = false, Action? actionAfterAutoClosed = null)
-  {
-    NotePage_InfoBar.IsOpen = true;
-
-    if (interval is null)
-    {
-      NotePage_InfoBar.IsClosable = true;
-    }
-    else
-    {
-      NotePage_InfoBar.IsClosable = showCloseButtonOnAutoClose;
-      _infoBarDismissTimer.Stop();
-      _infoBarDismissTimer.Interval = interval.Value;
-      void InfoBarDismissTimer_Tick_WhenAutoClosed(object? sender, object e)
-      {
-        _infoBarDismissTimer.Tick -= InfoBarDismissTimer_Tick_WhenAutoClosed;
-        actionAfterAutoClosed.Invoke();
-      }
-      if (actionAfterAutoClosed is not null)
-      {
-        _infoBarDismissTimer.Tick += InfoBarDismissTimer_Tick_WhenAutoClosed;
-      }
-
-      _infoBarDismissTimer.Start();
-    }
-  }
-
-  private void InfoBarDismissTimer_Tick(object? sender, object e)
-  {
-    NotePage_InfoBar.IsOpen = false;
-    _infoBarDismissTimer.Stop();
   }
 
   private async void NotePage_SaveKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
@@ -524,35 +493,66 @@ partial class NotePage
     }
   }
 
-  private void NotePage_FindKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
-  {
-    if (NotePage_FindReplaceBox.IsOpen)
-    {
-      VisualStateManager.GoToState(this, nameof(EditorSearchNone), false);
-    }
-    else
-    {
-      VisualStateManager.GoToState(this, nameof(EditorSearching), false);
-    }
-  }
+  private void NotePage_FindKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) => VisualStateManager.GoToState(this, NotePage_FindReplaceBox.IsOpen ? nameof(EditorSearchNone) : nameof(EditorSearching), false);
 
-  private void NotePage_ReplaceKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
-  {
-    if (NotePage_FindReplaceBox.IsOpen)
-    {
-      VisualStateManager.GoToState(this, nameof(EditorSearchNone), false);
-    }
-    else
-    {
-      VisualStateManager.GoToState(this, nameof(EditorSearching), false);
-    }
-  }
-
+  private void NotePage_ReplaceKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) =>
+      VisualStateManager.GoToState(this, NotePage_FindReplaceBox.IsOpen ? nameof(EditorSearchNone) : nameof(EditorSearching), false);
   private void NotePage_RenameTitleKeyboardAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
   {
     VisualStateManager.GoToState(this, nameof(TitleBarTitleRename), false);
     NotePage_TitleRenameTextBox.Focus(FocusState.Keyboard);
     NotePage_TitleRenameTextBox.LayoutUpdated += NotePage_TitleRenameTextBox_LayoutUpdated;
+  }
+}
+#endregion
+
+#region 이미지 패널 항목 드래그 앤드 드롭
+partial class NotePage
+{
+  int _sourceIndex = -1;
+  private void NotePage_ImagesGridView_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
+  {
+    if (e.Items.FirstOrDefault() is ImageViewModel sourceItem)
+    {
+      _sourceIndex = NotePage_ImagesGridView.Items.IndexOf(sourceItem);
+    }
+  }
+
+  private async void NotePage_ImagesGridView_Drop(object sender, DragEventArgs e)
+  {
+    var pointerPosition = e.GetPosition(NotePage_ImagesGridView);
+    int dropIndex = -1;
+    int count = NotePage_ImagesGridView.Items.Count;
+    for (int index = 0; index < count; index++)
+    {
+      if (NotePage_ImagesGridView.ContainerFromIndex(index) is not GridViewItem container)
+      {
+        continue;
+      }
+
+      var containerBounds = container.TransformToVisual(NotePage_ImagesGridView).TransformBounds(new Rect(0, 0, container.ActualWidth, container.ActualHeight));
+
+      if (containerBounds.Contains(pointerPosition))
+      {
+        dropIndex = index;
+        break;
+      }
+    }
+
+    if (_sourceIndex != dropIndex && _sourceIndex >= 0 && _sourceIndex < count && dropIndex >= 0 && dropIndex < count)
+    {
+      if (ImageCollectionViewModel is not null)
+      {
+        await ImageCollectionViewModel.MoveImageAsync(_sourceIndex, dropIndex);
+      }
+    }
+
+    _sourceIndex = -1;
+  }
+
+  private void NotePage_ImagesGridView_DragOver(object sender, DragEventArgs e)
+  {
+    e.AcceptedOperation = DataPackageOperation.Move;
   }
 }
 #endregion
@@ -575,16 +575,16 @@ partial class NotePage
       {
         if (presenterState is OverlappedPresenterState.Maximized)
         {
-          VisualStateManager.GoToState(recipient, "WindowDeactivatedMaximized", false);
+          VisualStateManager.GoToState(recipient, nameof(WindowDeactivatedMaximized), false);
         }
         else
         {
-          VisualStateManager.GoToState(recipient, "WindowDeactivated", false);
+          VisualStateManager.GoToState(recipient, nameof(WindowDeactivated), false);
         }
       }
       else
       {
-        VisualStateManager.GoToState(recipient, "WindowActivated", false);
+        VisualStateManager.GoToState(recipient, nameof(WindowActivated), false);
       }
     });
   }

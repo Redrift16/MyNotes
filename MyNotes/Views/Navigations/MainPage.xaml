@@ -116,7 +116,7 @@
                     IsBackButtonVisible="Collapsed"
                     IsPaneToggleButtonVisible="False"
                     IsSettingsVisible="False"
-                    IsPaneOpen="{x:Bind ViewModel.IsNavigationPaneOpen, Mode=OneWay}"
+                    IsPaneOpen="{x:Bind ViewModel.IsNavigationPaneOpen, Mode=TwoWay}"
                     MenuItemsSource="{x:Bind ViewModel.MenuItems}"
                     FooterMenuItemsSource="{x:Bind ViewModel.FooterMenuItems}"
                     SelectedItem="{x:Bind ViewModel.SelectedNavigationViewModel, Mode=TwoWay}">

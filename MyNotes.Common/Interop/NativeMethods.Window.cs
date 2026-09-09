@@ -79,5 +79,9 @@ internal static partial class NativeMethods
   }
 
   public static double GetWindowScaleFactor(IntPtr hWnd) => GetDpiForWindow(hWnd) / 96.0;
+
+  [LibraryImport("user32.dll", SetLastError = true)]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  public static partial bool IsWindowArranged(IntPtr hWnd);
   #endregion
 }

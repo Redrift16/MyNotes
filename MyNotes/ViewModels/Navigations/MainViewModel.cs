@@ -4,7 +4,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 using Microsoft.Extensions.DependencyInjection;
 
+using MyNotes.Application.Settings.Services;
 using MyNotes.Common.Commands;
+using MyNotes.Constants;
 using MyNotes.Domain.Navigations;
 using MyNotes.Models.Navigations;
 using MyNotes.Models.Navigations.Core;
@@ -22,39 +24,16 @@ internal sealed partial class MainViewModel : ViewModelBase
   private readonly NavigationController NavigationController;
   private readonly NavigationViewModelProvider NavigationViewModelProvider;
   private readonly NavigationCommandService NavigationCommandService;
-
-  // Header
-  private readonly LeasedNavigationViewModelCollection _headerMenuItemLeases;
-  public IReadOnlyList<NavigationViewModelBase> HeaderMenuItems => _headerMenuItemLeases.ViewModels;
-
-  // User
-  public IViewModelLease<NavigationViewModelBase> _userRootNavigationViewModelLease;
-  public UserRootGroupNavigationViewModel UserRootNavigationViewModel => (UserRootGroupNavigationViewModel)_userRootNavigationViewModelLease.ViewModel;
-  //public IReadOnlyList<NavigationViewModelBase> UserNavigationViewModels => UserRootNavigationViewModel.ChildNodeViewModels;
-
-  // Footer
-  private readonly LeasedNavigationViewModelCollection _footerMenuItemLeases;
-  public IReadOnlyList<NavigationViewModelBase> FooterMenuItems => _footerMenuItemLeases.ViewModels;
-
-  public ReadOnlyObservableCollection<NavigationViewModelBase> MenuItems { get; }
-
-  [ObservableProperty]
-  public partial NavigationViewModelBase? SelectedNavigationViewModel { get; set; }
-  partial void OnSelectedNavigationViewModelChanged(NavigationViewModelBase? value)
-  {
-    if (value is not null)
-    {
-      NavigationController.NavigateTo(value.Navigation);
-    }
-  }
+  private readonly AppSettingsService AppSettingsService;
 
   #region Object Lifetime Management
-  public MainViewModel(NavigationController navigationController, NavigationViewModelProvider navigationViewModelProvider, [FromKeyedServices(CommandServiceType.Navigation)] ICommandService navigationCommandService)
+  public MainViewModel(NavigationController navigationController, NavigationViewModelProvider navigationViewModelProvider, [FromKeyedServices(CommandServiceType.Navigation)] ICommandService navigationCommandService, AppSettingsService appSettingsService)
   {
     // DI
     NavigationController = navigationController;
     NavigationViewModelProvider = navigationViewModelProvider;
     NavigationCommandService = (NavigationCommandService)navigationCommandService;
+    AppSettingsService = appSettingsService;
 
     _headerMenuItemLeases = new(NavigationController.PrimaryCoreNavigations.Select(NavigationViewModelProvider.Resolve));
     _userRootNavigationViewModelLease = NavigationViewModelProvider.Resolve(NavigationController.UserRootNavigation);
@@ -62,6 +41,8 @@ internal sealed partial class MainViewModel : ViewModelBase
     MenuItems = new([.. HeaderMenuItems, UserRootNavigationViewModel]);
 
     NavigationController.CurrentNavigationChanged += NavigationController_CurrentNavigationChanged;
+
+    _isNavigationPaneOpen = AppSettingsService.Load(AppSettingsDescriptors.IsMainNavigationPaneOpen);
 
     SetCommands();
   }
@@ -85,6 +66,34 @@ internal sealed partial class MainViewModel : ViewModelBase
     base.Dispose(disposing);
   }
   #endregion
+}
+
+// Navigation
+partial class MainViewModel : ViewModelBase
+{
+  // Header
+  private readonly LeasedNavigationViewModelCollection _headerMenuItemLeases;
+  public IReadOnlyList<NavigationViewModelBase> HeaderMenuItems => _headerMenuItemLeases.ViewModels;
+
+  // User
+  public readonly IViewModelLease<NavigationViewModelBase> _userRootNavigationViewModelLease;
+  public UserRootGroupNavigationViewModel UserRootNavigationViewModel => (UserRootGroupNavigationViewModel)_userRootNavigationViewModelLease.ViewModel;
+
+  // Footer
+  private readonly LeasedNavigationViewModelCollection _footerMenuItemLeases;
+  public IReadOnlyList<NavigationViewModelBase> FooterMenuItems => _footerMenuItemLeases.ViewModels;
+
+  public ReadOnlyObservableCollection<NavigationViewModelBase> MenuItems { get; }
+
+  [ObservableProperty]
+  public partial NavigationViewModelBase? SelectedNavigationViewModel { get; set; }
+  partial void OnSelectedNavigationViewModelChanged(NavigationViewModelBase? value)
+  {
+    if (value is not null)
+    {
+      NavigationController.NavigateTo(value.Navigation);
+    }
+  }
 
   public event TypedEventHandler<object, INavigation?>? CurrentNavigationChanged
   {
@@ -155,11 +164,21 @@ internal sealed partial class MainViewModel : ViewModelBase
   [ObservableProperty]
   public partial bool CanNavigateBack { get; private set; } = false;
 
-  [ObservableProperty]
-  public partial bool IsNavigationPaneOpen { get; private set; } = true;
+  private bool _isNavigationPaneOpen;
+  public bool IsNavigationPaneOpen
+  {
+    get => _isNavigationPaneOpen;
+    set
+    {
+      if (SetProperty(ref _isNavigationPaneOpen, value))
+      {
+        AppSettingsService.Save(AppSettingsDescriptors.IsMainNavigationPaneOpen, _isNavigationPaneOpen);
+      }
+    }
+  }
 }
 
-internal sealed partial class MainViewModel : ViewModelBase
+partial class MainViewModel : ViewModelBase
 {
   public AsyncCommand<NavigationUserNode> AddListCommand { get; private set; }
 

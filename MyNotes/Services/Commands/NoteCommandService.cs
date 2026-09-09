@@ -7,7 +7,6 @@ using MyNotes.Application.Results;
 using MyNotes.Application.Settings.Services;
 using MyNotes.Common.Converters.Codecs;
 using MyNotes.Common.Enums.Modes;
-using MyNotes.Common.Helpers;
 using MyNotes.Common.Interop;
 using MyNotes.Common.Mappers;
 using MyNotes.Constants;

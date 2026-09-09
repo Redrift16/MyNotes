@@ -82,17 +82,16 @@ internal sealed partial class ImageViewerPage : Page, ITitleBarProvider, IAsyncD
   private bool _disposeStarted;
   public async ValueTask DisposeAsync()
   {
+    if (Interlocked.Exchange(ref _disposeStarted, true))
+    {
+      return;
+    }
     await DisposeAsyncCore();
     GC.SuppressFinalize(this);
   }
 
   public async ValueTask DisposeAsyncCore()
   {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
-
     Bindings.StopTracking();
 
     if (ViewModelLease is not null)

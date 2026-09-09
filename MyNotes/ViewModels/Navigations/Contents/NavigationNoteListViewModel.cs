@@ -67,11 +67,6 @@ internal sealed partial class NavigationNoteListViewModel : AsyncViewModelBase
 
   protected override async ValueTask DisposeAsyncCore()
   {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
-
     await _notePreviewViewModelLeases.DisposeAsync();
     Navigation.PropertyChanged -= Navigation_PropertyChanged;
     UnregisterMessengers();

@@ -69,6 +69,8 @@ internal sealed partial class NoteEditorViewModel : AsyncViewModelBase
     ChangeSystemBackdrop();
     ChangeSystemBackdropExtended();
     SetCommands();
+
+    State = NoteEditorViewModelState.Initialized;
   }
 
   private void InitializeMembers()
@@ -80,45 +82,74 @@ internal sealed partial class NoteEditorViewModel : AsyncViewModelBase
 
   public void AttachDocument(RichEditTextDocument document)
   {
+    if (State is not NoteEditorViewModelState.Initialized)
+    {
+      throw new InvalidOperationException();
+    }
+
     Document = document;
     State = NoteEditorViewModelState.DocumentReady;
   }
 
-  public async Task LoadBodyAsync()
+  private readonly SemaphoreSlim _bodyOperationSemaphoreSlim = new(1, 1);
+
+  private Task? _loadBodyTask;
+  public Task LoadBodyAsync() => _loadBodyTask ??= LoadBodyAsyncCore();
+
+  private async Task LoadBodyAsyncCore()
   {
-    // Editor BodyText
+    await _bodyOperationSemaphoreSlim.WaitAsync();
     try
     {
+      if (State is not NoteEditorViewModelState.DocumentReady)
+      {
+        return;
+      }
+
+      State = NoteEditorViewModelState.Loading;
+
+      // Editor BodyText
       Document.LoadFromStream(TextSetOptions.FormatRtf, await StreamHelper.ToRandomAccessStreamAsync(Note.Body));
       State = NoteEditorViewModelState.Loaded;
       _bodyEditorBatchTimer.Tick += BodyEditorBatchTimer_Tick;
+
+      Note.PropertyChanged += Note_PropertyChanged;
     }
     catch
     {
       State = NoteEditorViewModelState.Failed;
     }
-    Note.PropertyChanged += Note_PropertyChanged;
+    finally
+    {
+      _bodyOperationSemaphoreSlim.Release();
+    }
   }
 
   protected override async ValueTask DisposeAsyncCore()
   {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
+    await _bodyOperationSemaphoreSlim.WaitAsync();
+    try
     {
-      return;
+      var previousState = State;
+      State = NoteEditorViewModelState.Disposing;
+
+      _bodyEditorBatchTimer.Stop();
+      _bodyEditorBatchTimer.Tick -= BodyEditorBatchTimer_Tick;
+
+      Note.PropertyChanged -= Note_PropertyChanged;
+
+      if (previousState is NoteEditorViewModelState.Loaded && !await DeleteNotePermanentlyWhenEmpty())
+      {
+        await UpdateNoteBodyAsyncCore(CancellationToken.None);
+        await NoteService.Modification.CommitSearchIndexAsync();
+      }
     }
-
-    var previousState = State;
-    State = NoteEditorViewModelState.Disposing;
-
-    Note.PropertyChanged -= Note_PropertyChanged;
-    _bodyEditorBatchTimer.Tick -= BodyEditorBatchTimer_Tick;
-
-    if (previousState is NoteEditorViewModelState.Loaded && !await DeleteNotePermanentlyWhenEmpty())
+    finally
     {
-      await UpdateNoteBodyAsync();
-      await NoteService.Modification.CommitSearchIndexAsync();
+      await NoteViewModelLease.DisposeAsync();
+      State = NoteEditorViewModelState.Disposed;
+      _bodyOperationSemaphoreSlim.Release();
     }
-    await NoteViewModelLease.DisposeAsync();
   }
   #endregion
 
@@ -270,7 +301,7 @@ partial class NoteEditorViewModel
     [nameof(NoteModel.Size)] = new()
     {
       Key = nameof(NoteModel.Size),
-      BatchMode = UpdateBatchMode.Batched,
+      BatchMode = UpdateBatchMode.Unbatched,
       CreatePatch = (noteModel) => new NoteViewStatePatchDto()
       {
         Id = noteModel.Id,
@@ -281,7 +312,7 @@ partial class NoteEditorViewModel
     [nameof(NoteModel.Position)] = new()
     {
       Key = nameof(NoteModel.Position),
-      BatchMode = UpdateBatchMode.Batched,
+      BatchMode = UpdateBatchMode.Unbatched,
       CreatePatch = (noteModel) => new NoteViewStatePatchDto()
       {
         Id = noteModel.Id,
@@ -800,21 +831,38 @@ partial class NoteEditorViewModel
 
   public async Task<bool> UpdateNoteBodyAsync(CancellationToken cancellationToken = default)
   {
+    await _bodyOperationSemaphoreSlim.WaitAsync(cancellationToken);
+    try
+    {
+      return State is NoteEditorViewModelState.Loaded && await UpdateNoteBodyAsyncCore(cancellationToken);
+    }
+    finally
+    {
+      _bodyOperationSemaphoreSlim.Release();
+    }
+  }
+
+  private async Task<bool> UpdateNoteBodyAsyncCore(CancellationToken cancellationToken = default)
+  {
     _bodyEditorBatchTimer.Stop();
 
-    if (State is NoteEditorViewModelState.Loaded)
+    try
     {
       using IRandomAccessStream randomAccessStream = new InMemoryRandomAccessStream();
       Document.SaveToStream(TextGetOptions.FormatRtf, randomAccessStream);
       Note.Body = await StreamHelper.ToByteArrayAsync(randomAccessStream, cancellationToken);
-      await UpdateAsync(nameof(NoteModel.Body));
-
-      if (_shouldChangePreview)
+      var updateResult = await UpdateAsync(nameof(NoteModel.Body));
+      if (updateResult.Status is AppUpdateStatus.Succeeded)
       {
-        WeakReferenceMessenger.Default.Send(new NotePreviewUpdateRequestedMessage(Note.Id), MessageToken<NoteId>.Create(Note.Id));
+        if (_shouldChangePreview)
+        {
+          WeakReferenceMessenger.Default.Send(new NotePreviewUpdateRequestedMessage(Note.Id), MessageToken<NoteId>.Create(Note.Id));
+        }
+        return true;
       }
-
-      return true;
+    }
+    catch
+    {
     }
 
     _shouldChangePreview = false;
@@ -955,8 +1003,11 @@ partial class NoteEditorViewModel
 internal enum NoteEditorViewModelState
 {
   Initializing,
+  Initialized,
   DocumentReady,
+  Loading,
   Loaded,
   Failed,
-  Disposing
+  Disposing,
+  Disposed
 }

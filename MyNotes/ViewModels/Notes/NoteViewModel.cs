@@ -48,11 +48,6 @@ internal sealed partial class NoteViewModel : AsyncViewModelBase
 
   protected override async ValueTask DisposeAsyncCore()
   {
-    if (Interlocked.Exchange(ref _disposeStarted, true))
-    {
-      return;
-    }
-
     Note.PropertyChanged -= Note_PropertyChanged;
   }
   #endregion
