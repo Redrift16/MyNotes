@@ -109,7 +109,11 @@ internal sealed partial class NoteEditorViewModel : AsyncViewModelBase
       State = NoteEditorViewModelState.Loading;
 
       // Editor BodyText
-      Document.LoadFromStream(TextSetOptions.FormatRtf, await StreamHelper.ToRandomAccessStreamAsync(Note.Body));
+      using (var stream = await StreamHelper.ToRandomAccessStreamAsync(Note.Body))
+      {
+        Document.LoadFromStream(TextSetOptions.FormatRtf, stream);
+      }
+
       State = NoteEditorViewModelState.Loaded;
       _bodyEditorBatchTimer.Tick += BodyEditorBatchTimer_Tick;
 

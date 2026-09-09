@@ -1,9 +1,7 @@
 ﻿using CommunityToolkit.Mvvm.Messaging;
-using CommunityToolkit.Mvvm.Messaging.Messages;
 
 using MyNotes.Application.Contracts.Converters;
 using MyNotes.Common.Helpers;
-using MyNotes.Constants;
 using MyNotes.Domain.Notes;
 using MyNotes.Messaging;
 using MyNotes.Messaging.Messages;
@@ -45,7 +43,11 @@ internal partial class NotePreviewViewModel : AsyncViewModelBase
     set => SetProperty(ref _preview, value);
   }
 
-  private async Task<string> GetPreviewAsync() => RtfTextConverter.GetPreview(await StreamHelper.ToRandomAccessStreamAsync(Note.Body), 0, _previewTextMaxLength);
+  private async Task<string> GetPreviewAsync()
+  {
+    using var stream = await StreamHelper.ToRandomAccessStreamAsync(Note.Body);
+    return RtfTextConverter.GetPreview(stream, 0, _previewTextMaxLength);
+  }
 
   private async Task SetPreviewAsync() => Preview = await GetPreviewAsync();
 

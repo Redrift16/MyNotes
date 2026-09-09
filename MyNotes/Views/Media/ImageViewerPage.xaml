@@ -25,15 +25,15 @@
         <StackPanel Orientation="Horizontal"
                     Padding="4,0"
                     Spacing="3">
-          <templates:AlternateSubtleIconToggleButton x:Uid="/ImageViewerPage/PinWindowToggleButton"
-                                                     Grid.Column="0"
-                                                     IsChecked="{x:Bind IsAlwaysOnTop, Mode=TwoWay}"
-                                                     Icon="{ctw:FontIcon Glyph=&#xE718;}">
-            <templates:AlternateSubtleIconToggleButton.KeyboardAccelerators>
+          <templates:SubtleIconToggleButton x:Uid="/ImageViewerPage/PinWindowToggleButton"
+                                            Grid.Column="0"
+                                            Content="{ctw:FontIcon Glyph=&#xE718;}"
+                                            IsChecked="{x:Bind IsAlwaysOnTop, Mode=TwoWay}">
+            <templates:SubtleIconToggleButton.KeyboardAccelerators>
               <KeyboardAccelerator Modifiers="Control"
                                    Key="P" />
-            </templates:AlternateSubtleIconToggleButton.KeyboardAccelerators>
-          </templates:AlternateSubtleIconToggleButton>
+            </templates:SubtleIconToggleButton.KeyboardAccelerators>
+          </templates:SubtleIconToggleButton>
           <Rectangle Width="1"
                      Stretch="Fill"
                      Margin="0,6"

@@ -254,7 +254,6 @@ partial class NotePage
   private static bool AllowAppWindowSizePositionUpdate(AppWindow appWindow) => appWindow.Presenter is OverlappedPresenter presenter && presenter.State is OverlappedPresenterState.Restored && !NativeMethods.IsWindowArranged(Win32Interop.GetWindowFromWindowId(appWindow.Id));
   private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
   {
-
     if (args.DidSizeChange || args.DidPositionChange)
     {
       if (AllowAppWindowSizePositionUpdate(sender))
@@ -267,20 +266,12 @@ partial class NotePage
       }
     }
 
-    if (args.DidSizeChange)
+    if (FocusManager.GetFocusedElement(this.XamlRoot) is FrameworkElement focusedElement
+      && focusedElement == NotePage_TextEditorRichEditBox)
     {
-      if (AllowAppWindowSizePositionUpdate(sender))
-      {
-        Note.Size = sender.Size;
-      }
-
-      if (FocusManager.GetFocusedElement(this.XamlRoot) is FrameworkElement focusedElement
-        && focusedElement == NotePage_TextEditorRichEditBox)
-      {
-        NotePage_TitleBarGrid.Focus(FocusState.Programmatic);
-      }
-      NoteViewModel.ImagePanelMaxHeight = Math.Min(this.ActualHeight * 0.5, 512 * this.XamlRoot.RasterizationScale);
+      NotePage_TitleBarGrid.Focus(FocusState.Programmatic);
     }
+    NoteViewModel.ImagePanelMaxHeight = Math.Min(this.ActualHeight * 0.5, 512 * this.XamlRoot.RasterizationScale);
   }
 
   private void AppWindowSizePotionUpdateTimer_Tick(object? sender, object e) => UpdateWindowSizeAndPosition();

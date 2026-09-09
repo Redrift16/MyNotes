@@ -56,7 +56,8 @@ internal sealed partial class NoteModificationService
       NoteProjectionDto noteProjectionDto = await NoteRepository.GetNoteFieldValuesAsync(id, NoteProjectionFields.Title | NoteProjectionFields.Body, cancellationToken);
       if (noteProjectionDto.Title.TryGet(out var title) && noteProjectionDto.Body.TryGet(out var body))
       {
-        await NoteSearcher.WriteNoteIndexAsync(NoteMappers.ToSearchDocumentDto(id, title, RtfTextConverter.ToPlainText(await StreamHelper.ToRandomAccessStreamAsync(body))), cancellationToken);
+        using var stream = await StreamHelper.ToRandomAccessStreamAsync(body);
+        await NoteSearcher.WriteNoteIndexAsync(NoteMappers.ToSearchDocumentDto(id, title, RtfTextConverter.ToPlainText(stream)), cancellationToken);
       }
     }
 
